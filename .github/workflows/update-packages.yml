@@ -1,0 +1,52 @@
+name: Update packages
+
+on:
+  schedule:
+    - cron: "37 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-packages
+  cancel-in-progress: false
+
+jobs:
+  update-lite-xl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test updater
+        run: python3 -m unittest discover -s tests
+
+      - name: Update Lite XL
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/update_lite_xl.py
+
+      - name: Commit update or keep scheduled workflow active
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if ! git diff --quiet -- packages/lite-xl-app-source.json; then
+            version="$(python3 -c 'import json; print(json.load(open("packages/lite-xl-app-source.json"))["version"])')"
+            git add packages/lite-xl-app-source.json
+            git commit -m "chore: update Lite XL to $version"
+            git push
+            exit 0
+          fi
+
+          now="$(date +%s)"
+          last_commit="$(git log -1 --format=%ct)"
+          if (( now - last_commit >= 2592000 )); then
+            git commit --allow-empty -m "chore: keep package updater active"
+            git push
+          else
+            echo "No package update or heartbeat is due."
+          fi
