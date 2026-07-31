@@ -9,20 +9,35 @@
       nixpkgs,
     }:
     let
+      darwinPkgs = import nixpkgs {
+        system = "aarch64-darwin";
+        config.allowUnfree = true;
+      };
+      egoLiteOverlay = final: _prev: {
+        ego-lite = final.callPackage ./packages/ego-lite.nix { };
+      };
       liteXlAppOverlay = final: _prev: {
         lite-xl-app = final.callPackage ./packages/lite-xl-app.nix { };
       };
     in
     {
       packages.aarch64-darwin = rec {
-        lite-xl-app = nixpkgs.legacyPackages.aarch64-darwin.callPackage ./packages/lite-xl-app.nix { };
+        ego-lite = darwinPkgs.callPackage ./packages/ego-lite.nix { };
+        lite-xl-app = darwinPkgs.callPackage ./packages/lite-xl-app.nix { };
         default = lite-xl-app;
       };
 
       overlays = {
+        ego-lite = egoLiteOverlay;
         lite-xl-app = liteXlAppOverlay;
         default = self.overlays.lite-xl-app;
       };
+
+      darwinModules.ego-lite =
+        { lib, ... }:
+        {
+          nixpkgs.overlays = lib.mkAfter [ egoLiteOverlay ];
+        };
 
       darwinModules.lite-xl-app =
         { lib, ... }:

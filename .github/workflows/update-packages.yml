@@ -13,8 +13,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  update-lite-xl:
-    runs-on: ubuntu-latest
+  update-packages:
+    runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -26,6 +27,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/update_lite_xl.py
 
+      - name: Update ego lite
+        run: python3 scripts/update_ego_lite.py
+
       - name: Commit update or keep scheduled workflow active
         shell: bash
         run: |
@@ -34,10 +38,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if ! git diff --quiet -- packages/lite-xl-app-source.json; then
-            version="$(python3 -c 'import json; print(json.load(open("packages/lite-xl-app-source.json"))["version"])')"
-            git add packages/lite-xl-app-source.json
-            git commit -m "chore: update Lite XL to $version"
+          sources=(
+            packages/ego-lite-source.json
+            packages/lite-xl-app-source.json
+          )
+
+          if ! git diff --quiet -- "${sources[@]}"; then
+            git add "${sources[@]}"
+            git commit -m "chore: update package sources"
             git push
             exit 0
           fi
