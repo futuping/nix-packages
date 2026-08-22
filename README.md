@@ -58,12 +58,36 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
+## ShardX Launcher
+
+`shardx-launcher` packages the official Apple Silicon ShardX Launcher DMG.
+The launcher is MIT licensed, but its first run downloads a separate,
+closed-source Chromium engine and fingerprint library from ProxyShard's CDN.
+The upstream launcher is not notarized or signed with an Apple Developer ID;
+the derivation leaves its bundle unchanged.
+
+Import its focused overlay module:
+
+```nix
+modules = [
+  inputs.nix-packages.darwinModules.shardx-launcher
+];
+```
+
+Then select the package normally:
+
+```nix
+environment.systemPackages = with pkgs; [
+  shardx-launcher
+];
+```
+
 ## Automatic updates
 
-The `Update packages` workflow checks both packages daily. For Lite XL, it
-requires one exact `macos-arm64.dmg` release asset, downloads it from an
-allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset digest
-when available.
+The `Update packages` workflow checks all packages daily. Lite XL and ShardX
+Launcher each require one exact Apple Silicon release asset, download it from
+an allowlisted GitHub host, and verify its SHA-256 against GitHub's asset
+digest when available.
 
 ego lite uses a mutable official CDN URL instead of versioned release assets.
 Its updater cross-checks the downloaded SHA-256 against the CDN's S3 metadata,
@@ -82,6 +106,7 @@ Run the updater manually with:
 ```sh
 python3 scripts/update_lite_xl.py
 python3 scripts/update_ego_lite.py
+python3 scripts/update_shardx_launcher.py
 ```
 
 Consumers receive published updates the next time they update the

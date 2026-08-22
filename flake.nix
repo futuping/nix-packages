@@ -19,17 +19,22 @@
       liteXlAppOverlay = final: _prev: {
         lite-xl-app = final.callPackage ./packages/lite-xl-app.nix { };
       };
+      shardxLauncherOverlay = final: _prev: {
+        shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
+      };
     in
     {
       packages.aarch64-darwin = rec {
         ego-lite = darwinPkgs.callPackage ./packages/ego-lite.nix { };
         lite-xl-app = darwinPkgs.callPackage ./packages/lite-xl-app.nix { };
+        shardx-launcher = darwinPkgs.callPackage ./packages/shardx-launcher.nix { };
         default = lite-xl-app;
       };
 
       overlays = {
         ego-lite = egoLiteOverlay;
         lite-xl-app = liteXlAppOverlay;
+        shardx-launcher = shardxLauncherOverlay;
         default = self.overlays.lite-xl-app;
       };
 
@@ -43,6 +48,12 @@
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ liteXlAppOverlay ];
+        };
+
+      darwinModules.shardx-launcher =
+        { lib, ... }:
+        {
+          nixpkgs.overlays = lib.mkAfter [ shardxLauncherOverlay ];
         };
     };
 }
