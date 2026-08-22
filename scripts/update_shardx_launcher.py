@@ -33,7 +33,7 @@ ALLOWED_DOWNLOAD_HOSTS = {
 MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 APP_NAME = "ShardX Launcher.app"
 BUNDLE_ID = "com.shardx.launcher"
-EXECUTABLE_NAME = "ShardX Launcher"
+EXECUTABLE_NAME = "shardx-launcher"
 DEFAULT_SOURCE = (
     Path(__file__).resolve().parents[1]
     / "packages"
