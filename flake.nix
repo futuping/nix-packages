@@ -24,9 +24,6 @@
       egoLiteOverlay = final: _prev: {
         ego-lite = final.callPackage ./packages/ego-lite.nix { };
       };
-      liteXlAppOverlay = final: _prev: {
-        lite-xl-app = final.callPackage ./packages/lite-xl-app.nix { };
-      };
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
       };
@@ -36,32 +33,22 @@
       };
     in
     {
-      packages.aarch64-darwin = rec {
+      packages.aarch64-darwin = {
         ego-lite = darwinPkgs.callPackage ./packages/ego-lite.nix { };
-        lite-xl-app = darwinPkgs.callPackage ./packages/lite-xl-app.nix { };
         shardx-launcher = darwinPkgs.callPackage ./packages/shardx-launcher.nix { };
         neomacs = neomacsPackage;
-        default = lite-xl-app;
       };
 
       overlays = {
         ego-lite = egoLiteOverlay;
-        lite-xl-app = liteXlAppOverlay;
         shardx-launcher = shardxLauncherOverlay;
         neomacs = neomacsOverlay;
-        default = self.overlays.lite-xl-app;
       };
 
       darwinModules.ego-lite =
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ egoLiteOverlay ];
-        };
-
-      darwinModules.lite-xl-app =
-        { lib, ... }:
-        {
-          nixpkgs.overlays = lib.mkAfter [ liteXlAppOverlay ];
         };
 
       darwinModules.shardx-launcher =

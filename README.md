@@ -2,6 +2,15 @@
 
 Additional Nix packages that are not distributed through nixpkgs or Homebrew.
 
+Add the flake input and follow the consumer's nixpkgs revision:
+
+```nix
+inputs.nix-packages = {
+  url = "github:futuping/nix-packages";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
 ## ego lite
 
 `ego-lite` packages the official Apple Silicon DMG and exposes the bundled
@@ -24,37 +33,6 @@ Then select the package normally:
 ```nix
 environment.systemPackages = with pkgs; [
   ego-lite
-];
-```
-
-## Lite XL application
-
-`lite-xl-app` packages the official Apple Silicon DMG and preserves its
-upstream application signature. It is intentionally distinct from the
-source-built `pkgs.lite-xl` package in nixpkgs.
-
-Add the flake input and follow the consumer's nixpkgs revision:
-
-```nix
-inputs.nix-packages = {
-  url = "github:futuping/nix-packages";
-  inputs.nixpkgs.follows = "nixpkgs";
-};
-```
-
-Import the overlay module once:
-
-```nix
-modules = [
-  inputs.nix-packages.darwinModules.lite-xl-app
-];
-```
-
-Then manage the application through the ordinary package list:
-
-```nix
-environment.systemPackages = with pkgs; [
-  lite-xl-app
 ];
 ```
 
@@ -109,9 +87,9 @@ environment.systemPackages = with pkgs; [
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
-daily. Lite XL and ShardX Launcher each require one exact Apple Silicon release
-asset, download it from an allowlisted GitHub host, and verify its SHA-256
-against GitHub's asset digest when available.
+daily. ShardX Launcher requires one exact Apple Silicon release asset,
+downloads it from an allowlisted GitHub host, and verifies its SHA-256 against
+GitHub's asset digest when available.
 
 ego lite uses a mutable official CDN URL instead of versioned release assets.
 Its updater cross-checks the downloaded SHA-256 against the CDN's S3 metadata,
@@ -131,7 +109,6 @@ contents.
 Run the updater manually with:
 
 ```sh
-python3 scripts/update_lite_xl.py
 python3 scripts/update_ego_lite.py
 python3 scripts/update_shardx_launcher.py
 ```

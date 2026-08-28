@@ -22,11 +22,6 @@ jobs:
       - name: Test updater
         run: python3 -m unittest discover -s tests
 
-      - name: Update Lite XL
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/update_lite_xl.py
-
       - name: Update ego lite
         run: python3 scripts/update_ego_lite.py
 
@@ -45,7 +40,6 @@ jobs:
 
           sources=(
             packages/ego-lite-source.json
-            packages/lite-xl-app-source.json
             packages/shardx-launcher-source.json
           )
 
