@@ -31,6 +31,9 @@
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
       };
       neomacsPackage = neomacs.packages.aarch64-darwin.neomacs;
+      neomacsOverlay = final: _prev: {
+        neomacs = neomacs.packages.${final.stdenv.hostPlatform.system}.neomacs;
+      };
     in
     {
       packages.aarch64-darwin = rec {
@@ -45,6 +48,7 @@
         ego-lite = egoLiteOverlay;
         lite-xl-app = liteXlAppOverlay;
         shardx-launcher = shardxLauncherOverlay;
+        neomacs = neomacsOverlay;
         default = self.overlays.lite-xl-app;
       };
 
@@ -64,6 +68,12 @@
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ shardxLauncherOverlay ];
+        };
+
+      darwinModules.neomacs =
+        { lib, ... }:
+        {
+          nixpkgs.overlays = lib.mkAfter [ neomacsOverlay ];
         };
     };
 }

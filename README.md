@@ -90,12 +90,19 @@ post-v0.0.15 Darwin build fixes; the v0.0.15 macOS release artifacts are not
 self-contained and the tagged flake predates those fixes. The package installs
 the `neomacs` command rather than a macOS application bundle.
 
-Select the upstream package explicitly so it is not mistaken for a package
-instantiated from the consumer's `pkgs` set:
+Import its focused overlay module:
 
 ```nix
-environment.systemPackages = [
-  inputs.nix-packages.packages.${pkgs.stdenv.hostPlatform.system}.neomacs
+modules = [
+  inputs.nix-packages.darwinModules.neomacs
+];
+```
+
+Then select the package by its bare name:
+
+```nix
+environment.systemPackages = with pkgs; [
+  neomacs
 ];
 ```
 
