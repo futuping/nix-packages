@@ -82,12 +82,29 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
+## Neomacs
+
+`neomacs` forwards the upstream Apple Silicon Nix package at commit
+`6def94af1c407027274a61c04356212b87a4c7ff`. This revision includes the
+post-v0.0.15 Darwin build fixes; the v0.0.15 macOS release artifacts are not
+self-contained and the tagged flake predates those fixes. The package installs
+the `neomacs` command rather than a macOS application bundle.
+
+Select the upstream package explicitly so it is not mistaken for a package
+instantiated from the consumer's `pkgs` set:
+
+```nix
+environment.systemPackages = [
+  inputs.nix-packages.packages.${pkgs.stdenv.hostPlatform.system}.neomacs
+];
+```
+
 ## Automatic updates
 
-The `Update packages` workflow checks all packages daily. Lite XL and ShardX
-Launcher each require one exact Apple Silicon release asset, download it from
-an allowlisted GitHub host, and verify its SHA-256 against GitHub's asset
-digest when available.
+The `Update packages` workflow checks the updater-managed binary packages
+daily. Lite XL and ShardX Launcher each require one exact Apple Silicon release
+asset, download it from an allowlisted GitHub host, and verify its SHA-256
+against GitHub's asset digest when available.
 
 ego lite uses a mutable official CDN URL instead of versioned release assets.
 Its updater cross-checks the downloaded SHA-256 against the CDN's S3 metadata,
@@ -95,6 +112,9 @@ records the S3 version ID, mounts the DMG on macOS, and validates the bundle
 version, bundle ID, Developer ID authority, Team ID, executable architecture,
 strict code signature, and bundled CLI. Any changed artifact under an unchanged
 application version also fails for manual review.
+
+Neomacs remains pinned to a reviewed upstream source revision until a stable
+release contains both the Darwin build fixes and self-contained macOS artifacts.
 
 GitHub disables scheduled workflows in inactive public repositories after 60
 days. When no package update has occurred for 30 days, the workflow creates an

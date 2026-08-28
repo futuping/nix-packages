@@ -1,12 +1,20 @@
 {
   description = "Additional Nix packages and overlays";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    neomacs = {
+      url = "github:eval-exec/neomacs/6def94af1c407027274a61c04356212b87a4c7ff";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
     {
       self,
       nixpkgs,
+      neomacs,
     }:
     let
       darwinPkgs = import nixpkgs {
@@ -22,12 +30,14 @@
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
       };
+      neomacsPackage = neomacs.packages.aarch64-darwin.neomacs;
     in
     {
       packages.aarch64-darwin = rec {
         ego-lite = darwinPkgs.callPackage ./packages/ego-lite.nix { };
         lite-xl-app = darwinPkgs.callPackage ./packages/lite-xl-app.nix { };
         shardx-launcher = darwinPkgs.callPackage ./packages/shardx-launcher.nix { };
+        neomacs = neomacsPackage;
         default = lite-xl-app;
       };
 
