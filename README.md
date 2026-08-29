@@ -39,10 +39,16 @@ environment.systemPackages = with pkgs; [
 ## FloGravity
 
 `flogravity` packages the official universal macOS DMG for FloGravity (浮引).
-The derivation copies the complete `浮引.app` bundle without fixups, then checks
-the final bundle identity, architectures, Team ID, and strict code signature.
-The application is closed source and offers a separately licensed Pro edition,
-so the package is marked unfree.
+The HFS image's Unicode bundle and executable names are truncated by `undmg`,
+so the derivation identifies the sole application structurally and restores the
+names declared by its `Info.plist`. It checks the pinned bundle identity,
+architectures, and embedded upstream Team ID before applying a complete ad-hoc
+signature that preserves the hardened-runtime flags and entitlements, then
+strictly verifies the normalized bundle. The current upstream bundle does not
+pass strict signature verification even when mounted directly; the ad-hoc
+signature preserves installed bundle integrity but does not recreate Developer
+ID trust. The application is closed source and offers a separately licensed Pro
+edition, so the package is marked unfree.
 
 Import its focused overlay module:
 
@@ -111,10 +117,13 @@ environment.systemPackages = with pkgs; [
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
-daily. FloGravity is discovered from its official stable Sparkle appcast. The
-updater accepts only immutable versioned assets from the reviewed download
-host, computes their complete SHA-256, and verifies the bundle identity,
-universal architectures, Developer ID signature, and notarization on macOS.
+daily. FloGravity is discovered from its official stable Sparkle appcast. For a
+new candidate release, the updater accepts only immutable versioned assets from
+the reviewed download host, verifies its Sparkle Ed25519 signature, computes
+the complete SHA-256, and checks the bundle identity, universal architectures,
+and embedded signing identity. Future versions must also have a valid,
+notarized Developer ID signature; the known-invalid 4.12.0 signature is the
+only explicit exception and is handled by the package's complete ad-hoc signing.
 ShardX Launcher requires one exact Apple Silicon release asset, downloads it
 from an allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset
 digest when available.
@@ -152,7 +161,9 @@ nix run --no-update-lock-file .#maintainer-check
 
 CI also runs the complete offline suite on Python 3.9, the declared minimum
 compatible version, and Python 3.14, the current maintainer version. The
-scheduled workflow uses only the locked Nix entry points.
+scheduled workflow uses only the locked Nix entry points. Pull requests and
+pushes also build FloGravity on an Apple silicon macOS runner so DMG extraction
+and final bundle validation cannot be replaced by evaluation-only coverage.
 
 On Apple silicon macOS, run an updater manually from the repository root with:
 

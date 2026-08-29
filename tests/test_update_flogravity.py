@@ -156,6 +156,94 @@ class UpdateFloGravityTests(unittest.TestCase):
             with self.assertRaisesRegex(update_flogravity.UpdateError, "source keys"):
                 update_flogravity.read_source(path)
 
+    def test_signature_allows_only_known_invalid_upstream_version(self):
+        details = "\n".join(
+            [
+                "Identifier=me.vkr.fg",
+                "Authority=(unavailable)",
+                "TeamIdentifier=3MFNWTLLFG",
+            ]
+        )
+        invalid = mock.Mock(
+            returncode=1,
+            stdout="",
+            stderr="invalid signature",
+        )
+        with mock.patch.object(
+            update_flogravity,
+            "command_output",
+            return_value=details,
+        ), mock.patch.object(
+            update_flogravity,
+            "run",
+            return_value=invalid,
+        ), mock.patch(
+            "sys.stderr",
+            new_callable=io.StringIO,
+        ) as stderr:
+            update_flogravity.validate_application_signature(
+                Path("FloGravity.app"),
+                "4.12.0",
+            )
+
+        self.assertIn("known-invalid upstream", stderr.getvalue())
+
+    def test_signature_rejects_invalid_future_version(self):
+        details = "\n".join(
+            [
+                "Identifier=me.vkr.fg",
+                "Authority=(unavailable)",
+                "TeamIdentifier=3MFNWTLLFG",
+            ]
+        )
+        invalid = mock.Mock(
+            returncode=1,
+            stdout="",
+            stderr="invalid signature",
+        )
+        with mock.patch.object(
+            update_flogravity,
+            "command_output",
+            return_value=details,
+        ), mock.patch.object(
+            update_flogravity,
+            "run",
+            return_value=invalid,
+        ), self.assertRaisesRegex(
+            update_flogravity.UpdateError,
+            "invalid signature",
+        ):
+            update_flogravity.validate_application_signature(
+                Path("FloGravity.app"),
+                "4.13.0",
+            )
+
+    def test_signature_requires_expected_authority_when_valid(self):
+        details = "\n".join(
+            [
+                "Identifier=me.vkr.fg",
+                "Authority=(unavailable)",
+                "TeamIdentifier=3MFNWTLLFG",
+            ]
+        )
+        valid = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(
+            update_flogravity,
+            "command_output",
+            return_value=details,
+        ), mock.patch.object(
+            update_flogravity,
+            "run",
+            return_value=valid,
+        ), self.assertRaisesRegex(
+            update_flogravity.UpdateError,
+            "signing authorities",
+        ):
+            update_flogravity.validate_application_signature(
+                Path("FloGravity.app"),
+                "4.13.0",
+            )
+
     def test_download_rejects_unreviewed_redirect_host(self):
         class Response(io.BytesIO):
             headers = {

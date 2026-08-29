@@ -38,6 +38,7 @@ BUNDLE_ID = "me.vkr.fg"
 EXECUTABLE_NAME = "浮引"
 TEAM_ID = "3MFNWTLLFG"
 SIGNING_AUTHORITY = "Developer ID Application: JUN LIU (3MFNWTLLFG)"
+KNOWN_INVALID_DEVELOPER_ID_VERSIONS = frozenset({"4.12.0"})
 SPARKLE_PUBLIC_KEY = "163IhAWnm86c3DmcO88e+QYx0+uL9DCgGMpz/ERge1M="
 ED25519_FIELD = 2**255 - 19
 ED25519_ORDER = 2**252 + 27742317777372353535851937790883648493
@@ -479,6 +480,60 @@ def plist_string(plist: dict, key: str) -> str:
     return value
 
 
+def validate_application_signature(application: Path, version: str) -> None:
+    signature_details = command_output(
+        ["/usr/bin/codesign", "-dv", "--verbose=4", str(application)],
+        "inspect application signing metadata",
+    )
+    identifier_match = re.search(r"^Identifier=(.+)$", signature_details, re.M)
+    if identifier_match is None or identifier_match.group(1) != BUNDLE_ID:
+        actual_identifier = identifier_match.group(1) if identifier_match else None
+        raise UpdateError(f"unexpected signing identifier: {actual_identifier!r}")
+    team_match = re.search(r"^TeamIdentifier=(.+)$", signature_details, re.M)
+    if team_match is None or team_match.group(1) != TEAM_ID:
+        actual_team = team_match.group(1) if team_match else None
+        raise UpdateError(f"unexpected signing Team ID: {actual_team!r}")
+
+    authorities = re.findall(r"^Authority=(.+)$", signature_details, re.M)
+    verification = run(
+        [
+            "/usr/bin/codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "--verbose=2",
+            str(application),
+        ]
+    )
+    if verification.returncode != 0:
+        details = (verification.stderr or verification.stdout).strip()
+        if version not in KNOWN_INVALID_DEVELOPER_ID_VERSIONS:
+            raise UpdateError(f"unable to verify application signature: {details}")
+        print(
+            f"warning: FloGravity {version} has a known-invalid upstream "
+            "Developer ID signature; relying on its verified Sparkle Ed25519 "
+            "signature and package-level ad-hoc signing",
+            file=sys.stderr,
+        )
+        return
+
+    if not authorities or authorities[0] != SIGNING_AUTHORITY:
+        raise UpdateError(f"unexpected signing authorities: {authorities}")
+    gatekeeper = command_output(
+        [
+            "/usr/sbin/spctl",
+            "--assess",
+            "--type",
+            "execute",
+            "--verbose=4",
+            str(application),
+        ],
+        "verify application notarization",
+    )
+    if "source=Notarized Developer ID" not in gatekeeper:
+        raise UpdateError(f"unexpected Gatekeeper assessment: {gatekeeper!r}")
+
+
 def inspect_application(
     dmg_path: Path,
     expected_version: str,
@@ -554,42 +609,7 @@ def inspect_application(
                     f"unexpected application architectures: {sorted(architectures)}"
                 )
 
-            signature_details = command_output(
-                ["/usr/bin/codesign", "-dv", "--verbose=4", str(application)],
-                "inspect application signing metadata",
-            )
-            team_match = re.search(r"^TeamIdentifier=(.+)$", signature_details, re.M)
-            if team_match is None or team_match.group(1) != TEAM_ID:
-                actual_team = team_match.group(1) if team_match else None
-                raise UpdateError(f"unexpected signing Team ID: {actual_team!r}")
-            authorities = re.findall(r"^Authority=(.+)$", signature_details, re.M)
-            if not authorities or authorities[0] != SIGNING_AUTHORITY:
-                raise UpdateError(f"unexpected signing authorities: {authorities}")
-
-            command_output(
-                [
-                    "/usr/bin/codesign",
-                    "--verify",
-                    "--deep",
-                    "--strict",
-                    "--verbose=2",
-                    str(application),
-                ],
-                "verify application signature",
-            )
-            gatekeeper = command_output(
-                [
-                    "/usr/sbin/spctl",
-                    "--assess",
-                    "--type",
-                    "execute",
-                    "--verbose=4",
-                    str(application),
-                ],
-                "verify application notarization",
-            )
-            if "source=Notarized Developer ID" not in gatekeeper:
-                raise UpdateError(f"unexpected Gatekeeper assessment: {gatekeeper!r}")
+            validate_application_signature(application, expected_version)
         finally:
             had_exception = sys.exc_info()[0] is not None
             detach = run(["/usr/bin/hdiutil", "detach", str(mount_path), "-quiet"])

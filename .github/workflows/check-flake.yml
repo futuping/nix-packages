@@ -15,6 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  flogravity-package:
+    name: Build FloGravity on Apple silicon
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Verify Apple silicon package runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(/usr/bin/uname -m)" = arm64
+
+      - name: Build the locked FloGravity package
+        run: nix build --no-link --no-update-lock-file .#checks.aarch64-darwin.flogravity-package
+
   python-compatibility:
     name: Python ${{ matrix.python-version }} compatibility
     runs-on: ubuntu-latest
