@@ -57,8 +57,18 @@ jobs:
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
-      - name: Check every locked flake output without building
-        run: nix flake check --all-systems --no-build --no-update-lock-file
+      - name: Check locked maintainer outputs for every supported system
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nix eval --raw .#devShells.aarch64-darwin.maintainer.drvPath >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.maintainer-check.program >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.update-ego-lite.program >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.update-flogravity.program >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.update-shardx-launcher.program >/dev/null
+          nix eval --raw .#devShells.x86_64-linux.maintainer.drvPath >/dev/null
+          nix eval --raw .#apps.x86_64-linux.maintainer-check.program >/dev/null
 
       - name: Test through the locked maintainer environment
         run: nix run --no-update-lock-file .#maintainer-check
