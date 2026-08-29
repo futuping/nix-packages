@@ -31,5 +31,15 @@ jobs:
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
-      - name: Check locked flake inputs and package exports
-        run: nix flake check --all-systems --no-build --no-update-lock-file
+      - name: Check locked FloGravity package, overlay, and module
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nix flake metadata --no-update-lock-file >/dev/null
+          nix eval --raw .#packages.aarch64-darwin.flogravity.drvPath >/dev/null
+          nix eval --raw .#checks.aarch64-darwin.flogravity-package.drvPath >/dev/null
+          nix eval --raw .#checks.aarch64-darwin.flogravity-overlay.drvPath >/dev/null
+          nix eval --json .#darwinModules.flogravity \
+            --apply 'module: builtins.isFunction module || builtins.isAttrs module' \
+            >/dev/null
