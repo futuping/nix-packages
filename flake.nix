@@ -17,12 +17,15 @@
       neomacs,
     }:
     let
-      darwinPkgs = import nixpkgs {
+      aarch64DarwinPkgs = import nixpkgs {
         system = "aarch64-darwin";
         config.allowUnfree = true;
       };
       egoLiteOverlay = final: _prev: {
         ego-lite = final.callPackage ./packages/ego-lite.nix { };
+      };
+      flogravityOverlay = final: _prev: {
+        flogravity = final.callPackage ./packages/flogravity.nix { };
       };
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
@@ -34,13 +37,20 @@
     in
     {
       packages.aarch64-darwin = {
-        ego-lite = darwinPkgs.callPackage ./packages/ego-lite.nix { };
-        shardx-launcher = darwinPkgs.callPackage ./packages/shardx-launcher.nix { };
+        ego-lite = aarch64DarwinPkgs.callPackage ./packages/ego-lite.nix { };
+        flogravity = aarch64DarwinPkgs.callPackage ./packages/flogravity.nix { };
+        shardx-launcher = aarch64DarwinPkgs.callPackage ./packages/shardx-launcher.nix { };
         neomacs = neomacsPackage;
+      };
+
+      checks.aarch64-darwin = {
+        flogravity-package = self.packages.aarch64-darwin.flogravity;
+        flogravity-overlay = (aarch64DarwinPkgs.extend flogravityOverlay).flogravity;
       };
 
       overlays = {
         ego-lite = egoLiteOverlay;
+        flogravity = flogravityOverlay;
         shardx-launcher = shardxLauncherOverlay;
         neomacs = neomacsOverlay;
       };
@@ -49,6 +59,12 @@
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ egoLiteOverlay ];
+        };
+
+      darwinModules.flogravity =
+        { lib, ... }:
+        {
+          nixpkgs.overlays = lib.mkAfter [ flogravityOverlay ];
         };
 
       darwinModules.shardx-launcher =

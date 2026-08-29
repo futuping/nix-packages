@@ -36,6 +36,30 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
+## FloGravity
+
+`flogravity` packages the official universal macOS DMG for FloGravity (浮引).
+The derivation copies the complete `浮引.app` bundle without fixups, then checks
+the final bundle identity, architectures, Team ID, and strict code signature.
+The application is closed source and offers a separately licensed Pro edition,
+so the package is marked unfree.
+
+Import its focused overlay module:
+
+```nix
+modules = [
+  inputs.nix-packages.darwinModules.flogravity
+];
+```
+
+Then select the package by its bare name:
+
+```nix
+environment.systemPackages = with pkgs; [
+  flogravity
+];
+```
+
 ## ShardX Launcher
 
 `shardx-launcher` packages the official Apple Silicon ShardX Launcher DMG.
@@ -87,9 +111,13 @@ environment.systemPackages = with pkgs; [
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
-daily. ShardX Launcher requires one exact Apple Silicon release asset,
-downloads it from an allowlisted GitHub host, and verifies its SHA-256 against
-GitHub's asset digest when available.
+daily. FloGravity is discovered from its official stable Sparkle appcast. The
+updater accepts only immutable versioned assets from the reviewed download
+host, computes their complete SHA-256, and verifies the bundle identity,
+universal architectures, Developer ID signature, and notarization on macOS.
+ShardX Launcher requires one exact Apple Silicon release asset, downloads it
+from an allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset
+digest when available.
 
 ego lite uses a mutable official CDN URL instead of versioned release assets.
 Its updater cross-checks the downloaded SHA-256 against the CDN's S3 metadata,
@@ -110,6 +138,7 @@ Run the updater manually with:
 
 ```sh
 python3 scripts/update_ego_lite.py
+python3 scripts/update_flogravity.py
 python3 scripts/update_shardx_launcher.py
 ```
 
