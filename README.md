@@ -134,12 +134,32 @@ days. When no package update has occurred for 30 days, the workflow creates an
 empty heartbeat commit so the schedule remains active without changing package
 contents.
 
-Run the updater manually with:
+## Maintainer environment
+
+The flake pins the maintainer toolchain and explicitly selects Python 3.14.
+Enter it from the repository root with:
 
 ```sh
-python3 scripts/update_ego_lite.py
-python3 scripts/update_flogravity.py
-python3 scripts/update_shardx_launcher.py
+nix develop --no-update-lock-file .#maintainer
+```
+
+Run every offline updater test through the same locked Python, without using a
+host `python3` or user-installed Python packages:
+
+```sh
+nix run --no-update-lock-file .#maintainer-check
+```
+
+CI also runs the complete offline suite on Python 3.9, the declared minimum
+compatible version, and Python 3.14, the current maintainer version. The
+scheduled workflow uses only the locked Nix entry points.
+
+On Apple silicon macOS, run an updater manually from the repository root with:
+
+```sh
+nix run --no-update-lock-file .#update-ego-lite
+nix run --no-update-lock-file .#update-flogravity
+nix run --no-update-lock-file .#update-shardx-launcher
 ```
 
 Consumers receive published updates the next time they update the

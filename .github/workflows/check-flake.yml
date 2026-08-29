@@ -15,6 +15,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  python-compatibility:
+    name: Python ${{ matrix.python-version }} compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.9"
+          - "3.14"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Python 3.9 is the declared compatibility floor. Python 3.14 is the
+      # explicitly selected maintainer version in the locked Nix dev shell.
+      - uses: actions/setup-python@v6
+        id: python
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Test package updaters offline
+        shell: bash
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+
+          "$PYTHON" -c 'import os, sys; expected = tuple(map(int, os.environ["EXPECTED_PYTHON"].split("."))); assert sys.version_info[:2] == expected, (sys.version, expected)'
+          "$PYTHON" -m unittest discover -s tests
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -22,14 +55,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.9"
-
-      - name: Test package updaters offline
-        run: python3 -m unittest discover -s tests
-
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Check every locked flake output without building
+        run: nix flake check --all-systems --no-build --no-update-lock-file
+
+      - name: Test through the locked maintainer environment
+        run: nix run --no-update-lock-file .#maintainer-check
 
       - name: Check locked FloGravity package, overlay, and module
         shell: bash

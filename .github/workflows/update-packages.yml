@@ -14,24 +14,33 @@ concurrency:
 
 jobs:
   update-packages:
+    # GitHub's macos-15 label is the arm64 image; macos-15-intel is separate.
     runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
-      - name: Test updater
-        run: python3 -m unittest discover -s tests
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Verify Apple silicon updater runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(/usr/bin/uname -m)" = arm64
+
+      - name: Test updaters through the locked maintainer environment
+        run: nix run --no-update-lock-file .#maintainer-check
 
       - name: Update ego lite
-        run: python3 scripts/update_ego_lite.py
+        run: nix run --no-update-lock-file .#update-ego-lite
 
       - name: Update FloGravity
-        run: python3 scripts/update_flogravity.py
+        run: nix run --no-update-lock-file .#update-flogravity
 
       - name: Update ShardX Launcher
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/update_shardx_launcher.py
+        run: nix run --no-update-lock-file .#update-shardx-launcher
 
       - name: Commit update or keep scheduled workflow active
         shell: bash
