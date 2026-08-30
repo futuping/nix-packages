@@ -5,8 +5,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
     neomacs = {
-      url = "github:eval-exec/neomacs/6def94af1c407027274a61c04356212b87a4c7ff";
-      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:eval-exec/neomacs/main";
+      # Reuse upstream's locked build dependencies as well as its package.
     };
   };
 
@@ -53,6 +53,20 @@
         printf '%s\n' "$gatekeeper" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
           'source=Notarized Developer ID'
       '';
+      neomacsPackageCheck = aarch64DarwinPkgs.writeShellScript "neomacs-package-check" ''
+        set -euo pipefail
+        export LC_ALL=C
+
+        package="${self.packages.aarch64-darwin.neomacs}"
+        test "$package" = "${self.checks.aarch64-darwin.neomacs-overlay}"
+        # Both options return before Lisp, logging, or GUI initialization.
+        version="$("$package/bin/neomacs" --version)"
+        [[ "$version" == Neomacs\ * ]]
+        fingerprint="$("$package/bin/neomacs" --fingerprint)"
+        [[ "$fingerprint" =~ ^[[:xdigit:]]{64}$ ]]
+        test -s "$package/bin/neomacs-$fingerprint.pdump"
+        printf '%s\n' "$version"
+      '';
       maintainerFor =
         system:
         let
@@ -65,6 +79,8 @@
           maintainerCheck = pkgs.writeShellScript "nix-packages-maintainer-check" ''
             set -euo pipefail
             ${pythonEnvironment}
+            export NIX_PACKAGES_BASH=${pkgs.bash}/bin/bash
+            export PATH=${pkgs.lib.makeBinPath [ pkgs.coreutils ]}:"$PATH"
             cd ${self}
             ${python}/bin/python3 --version
             exec ${python}/bin/python3 -m unittest discover -s tests
@@ -93,14 +109,28 @@
         in
         {
           devShell = pkgs.mkShellNoCC {
-            packages = [ python ];
-            shellHook = pythonEnvironment;
+            packages = [
+              python
+              pkgs.nix
+            ];
+            shellHook = pythonEnvironment + ''
+              export NIX_PACKAGES_BASH=${pkgs.bash}/bin/bash
+            '';
           };
           checkApp = {
             type = "app";
             program = "${maintainerCheck}";
           };
           updaterApps = nixpkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+            update-neomacs = {
+              type = "app";
+              program = "${pkgs.writeShellScript "nix-packages-update-neomacs" ''
+                set -euo pipefail
+                export NIX_PACKAGES_NIX=${pkgs.nix}/bin/nix
+                export PATH=${pkgs.lib.makeBinPath [ pkgs.coreutils ]}:"$PATH"
+                exec ${pkgs.bash}/bin/bash ${./scripts/update_neomacs.sh} "$@"
+              ''}";
+            };
             update-ego-lite =
               makeUpdaterApp "update-ego-lite" ./scripts/update_ego_lite.py
                 "packages/ego-lite-source.json";
@@ -138,6 +168,8 @@
       checks.aarch64-darwin = {
         flogravity-package = self.packages.aarch64-darwin.flogravity;
         flogravity-overlay = (aarch64DarwinPkgs.extend flogravityOverlay).flogravity;
+        neomacs-package = self.packages.aarch64-darwin.neomacs;
+        neomacs-overlay = (aarch64DarwinPkgs.extend neomacsOverlay).neomacs;
       };
 
       devShells = forMaintainerSystems (system: {
@@ -155,6 +187,10 @@
           flogravity-package-check = {
             type = "app";
             program = "${flogravityPackageCheck}";
+          };
+          neomacs-package-check = {
+            type = "app";
+            program = "${neomacsPackageCheck}";
           };
         }
       );

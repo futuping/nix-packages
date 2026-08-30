@@ -15,6 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  neomacs-package:
+    name: Build Neomacs on Apple silicon
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Verify Apple silicon package runner
+        run: test "$(/usr/bin/uname -m)" = arm64
+
+      # Neomacs evaluation realizes Darwin-only build helpers, so keep this
+      # full check on its native runner instead of the Linux maintainer job.
+      - name: Check the standalone lock and all flake outputs
+        run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
+
+      - name: Build and smoke-test the locked Neomacs package
+        run: nix run --no-update-lock-file .#neomacs-package-check
+
   flogravity-package:
     name: Build FloGravity on Apple silicon
     runs-on: macos-15
@@ -87,6 +108,7 @@ jobs:
           nix eval --raw .#apps.aarch64-darwin.update-ego-lite.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-flogravity.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-shardx-launcher.program >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.update-neomacs.program >/dev/null
           nix eval --raw .#devShells.x86_64-linux.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.x86_64-linux.maintainer-check.program >/dev/null
 

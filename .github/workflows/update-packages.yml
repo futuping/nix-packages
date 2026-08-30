@@ -82,3 +82,47 @@ jobs:
           else
             echo "No package update or heartbeat is due."
           fi
+
+  update-neomacs:
+    name: Update Neomacs after native validation
+    needs: update-packages
+    if: ${{ always() && !cancelled() }}
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      # Read main again after the binary updater's possible commit. A failing
+      # Neomacs development revision cannot block or overwrite those updates.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Verify Apple silicon updater runner
+        run: test "$(/usr/bin/uname -m)" = arm64
+
+      - name: Test updaters through the locked maintainer environment
+        run: nix run --no-update-lock-file .#maintainer-check
+
+      - name: Update only Neomacs and validate its package
+        run: nix run --no-update-lock-file .#update-neomacs
+
+      - name: Validate the candidate standalone lock
+        run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
+
+      - name: Publish only a validated Neomacs lock
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- flake.lock; then
+            echo "Neomacs lock did not change."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- flake.lock
+          git commit -m "chore: update Neomacs from main"
+          git push

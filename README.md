@@ -91,11 +91,31 @@ environment.systemPackages = with pkgs; [
 
 ## Neomacs
 
-`neomacs` forwards the upstream Apple Silicon Nix package at commit
-`6def94af1c407027274a61c04356212b87a4c7ff`. This revision includes the
-post-v0.0.15 Darwin build fixes; the v0.0.15 macOS release artifacts are not
-self-contained and the tagged flake predates those fixes. The package installs
-the `neomacs` command rather than a macOS application bundle.
+`neomacs` forwards the upstream Apple Silicon Nix package from `main`, retaining
+the upstream flake's own locked build dependencies. `flake.lock` records the
+exact adopted source revision; the input URL no longer freezes one commit.
+This intentionally follows development revisions rather than stable releases.
+The package installs the `neomacs` command rather than a macOS application
+bundle. Nix reuses matching outputs or binary caches when available; otherwise
+it compiles the upstream source and its missing dependencies.
+
+From a writable checkout, update only Neomacs and retain the candidate lock only
+after a native build and headless package check succeed:
+
+```sh
+nix run --no-update-lock-file .#update-neomacs
+```
+
+The updater restores the original lock on failure and skips the build if the
+lock is unchanged. To check the currently locked package without updating it:
+
+```sh
+nix run --no-update-lock-file .#neomacs-package-check
+```
+
+The check exercises `--version`, the embedded fingerprint, and its matching
+runtime image. It does not start the GUI or load user configuration, and is not
+a full interactive application test.
 
 Import its focused overlay module:
 
@@ -136,8 +156,13 @@ version, bundle ID, Developer ID authority, Team ID, executable architecture,
 strict code signature, and bundled CLI. Any changed artifact under an unchanged
 application version also fails for manual review.
 
-Neomacs remains pinned to a reviewed upstream source revision until a stable
-release contains both the Darwin build fixes and self-contained macOS artifacts.
+The same daily workflow updates Neomacs in a separate, sequential Apple Silicon
+job after the binary updaters. It updates only the Neomacs input and its upstream
+dependency lock graph, builds and smoke-tests the candidate, and checks the
+standalone flake before committing `flake.lock`. A failed candidate or timeout
+does not publish a Neomacs update or block the preceding DMG updates. The
+120-minute budget accommodates source builds without promising cache hits.
+Consumers still need to refresh their own lock; system activation is manual.
 
 GitHub disables scheduled workflows in inactive public repositories after 60
 days. When no package update has occurred for 30 days, the workflow creates an
@@ -146,7 +171,8 @@ contents.
 
 ## Maintainer environment
 
-The flake pins the maintainer toolchain and explicitly selects Python 3.14.
+The flake pins the maintainer toolchain, including Python 3.14 and the Nix CLI
+used for Neomacs lock updates and standalone evaluation.
 Enter it from the repository root with:
 
 ```sh
@@ -163,8 +189,9 @@ nix run --no-update-lock-file .#maintainer-check
 CI also runs the complete offline suite on Python 3.9, the declared minimum
 compatible version, and Python 3.14, the current maintainer version. The
 scheduled workflow uses only the locked Nix entry points. Pull requests and
-pushes also build FloGravity on an Apple silicon macOS runner so DMG extraction
-and final bundle validation cannot be replaced by evaluation-only coverage.
+pushes also build FloGravity and Neomacs on Apple silicon macOS runners, covering
+the final DMG bundle and the upstream source package rather than evaluation
+alone.
 
 On Apple silicon macOS, run an updater manually from the repository root with:
 
