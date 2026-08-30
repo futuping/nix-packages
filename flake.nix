@@ -65,6 +65,14 @@
         fingerprint="$("$package/bin/neomacs" --fingerprint)"
         [[ "$fingerprint" =~ ^[[:xdigit:]]{64}$ ]]
         test -s "$package/bin/neomacs-$fingerprint.pdump"
+        application="$package/Applications/Neomacs.app"
+        launcher="$application/Contents/MacOS/neomacs-launcher"
+        test -x "$launcher"
+        test -s "$application/Contents/Resources/neomacs.icns"
+        /usr/bin/plutil -lint "$application/Contents/Info.plist"
+        /usr/bin/codesign --verify --deep --strict "$application"
+        test "$("$launcher" --version)" = "$version"
+        test "$("$launcher" --fingerprint)" = "$fingerprint"
         printf '%s\n' "$version"
       '';
       maintainerFor =
@@ -152,9 +160,15 @@
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
       };
-      neomacsPackage = neomacs.packages.aarch64-darwin.neomacs;
+      neomacsPackageFor =
+        pkgs:
+        pkgs.callPackage ./packages/neomacs.nix {
+          upstream = neomacs.packages.${pkgs.stdenv.hostPlatform.system}.neomacs;
+          upstreamSource = neomacs;
+        };
+      neomacsPackage = neomacsPackageFor aarch64DarwinPkgs;
       neomacsOverlay = final: _prev: {
-        neomacs = neomacs.packages.${final.stdenv.hostPlatform.system}.neomacs;
+        neomacs = neomacsPackageFor final;
       };
     in
     {
@@ -170,6 +184,9 @@
         flogravity-overlay = (aarch64DarwinPkgs.extend flogravityOverlay).flogravity;
         neomacs-package = self.packages.aarch64-darwin.neomacs;
         neomacs-overlay = (aarch64DarwinPkgs.extend neomacsOverlay).neomacs;
+        neomacs-launcher = aarch64DarwinPkgs.callPackage ./tests/neomacs-launcher.nix {
+          upstreamSource = neomacs;
+        };
       };
 
       devShells = forMaintainerSystems (system: {

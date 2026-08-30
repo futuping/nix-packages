@@ -95,9 +95,19 @@ environment.systemPackages = with pkgs; [
 the upstream flake's own locked build dependencies. `flake.lock` records the
 exact adopted source revision; the input URL no longer freezes one commit.
 This intentionally follows development revisions rather than stable releases.
-The package installs the `neomacs` command rather than a macOS application
-bundle. Nix reuses matching outputs or binary caches when available; otherwise
-it compiles the upstream source and its missing dependencies.
+The package keeps the upstream `neomacs` command and adds
+`Applications/Neomacs.app` for Finder and Dock launching. The app contains the
+upstream icon and a small native launcher that executes the dependency-tracked
+upstream CLI wrapper. It is a Nix application entry point, not a self-contained
+redistributable DMG. Nix-darwin exposes it through `/Applications/Nix Apps`.
+
+The launcher is built separately from Neomacs: adding or changing the entry
+point reuses an unchanged upstream build. A new upstream Store path generates
+a matching launcher automatically, so no host paths or PATH lookups are baked
+into the source. Only the new launcher bundle is ad-hoc signed; the upstream
+program and its runtime resources are not modified or re-signed. Nix reuses
+matching outputs or binary caches when available; otherwise it compiles the
+upstream source and its missing dependencies.
 
 From a writable checkout, update only Neomacs and retain the candidate lock only
 after a native build and headless package check succeed:
@@ -114,8 +124,12 @@ nix run --no-update-lock-file .#neomacs-package-check
 ```
 
 The check exercises `--version`, the embedded fingerprint, and its matching
-runtime image. It does not start the GUI or load user configuration, and is not
-a full interactive application test.
+runtime image through both the CLI and app launcher, and verifies the app's
+metadata, icon and signature. It does not start the GUI or load user
+configuration, and is not a full interactive application test. The
+`checks.aarch64-darwin.neomacs-launcher` fixture additionally verifies argument
+forwarding and automatic retargeting when the upstream package path changes,
+without compiling Neomacs.
 
 Import its focused overlay module:
 
