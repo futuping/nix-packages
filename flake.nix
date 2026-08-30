@@ -27,6 +27,32 @@
         system = "aarch64-darwin";
         config.allowUnfree = true;
       };
+      flogravityPackageCheck = aarch64DarwinPkgs.writeShellScript "flogravity-package-check" ''
+        set -euo pipefail
+        export LC_ALL=C
+
+        application="${self.packages.aarch64-darwin.flogravity}/Applications/浮引.app"
+        signature_details="$(/usr/bin/codesign -d --verbose=4 "$application" 2>&1)"
+
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'Authority=Developer ID Application: JUN LIU (3MFNWTLLFG)'
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'TeamIdentifier=3MFNWTLLFG'
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Eq \
+          '^CodeDirectory .*flags=.*runtime'
+        if printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'Signature=adhoc'; then
+          echo 'FloGravity unexpectedly has an ad-hoc signature' >&2
+          exit 1
+        fi
+
+        /usr/bin/codesign --verify --deep --strict --verbose=4 "$application"
+        gatekeeper="$(
+          /usr/sbin/spctl --assess --type execute --verbose=4 "$application" 2>&1
+        )"
+        printf '%s\n' "$gatekeeper" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'source=Notarized Developer ID'
+      '';
       maintainerFor =
         system:
         let
@@ -125,6 +151,12 @@
           maintainer-check = maintainer.${system}.checkApp;
         }
         // maintainer.${system}.updaterApps
+        // nixpkgs.lib.optionalAttrs (system == "aarch64-darwin") {
+          flogravity-package-check = {
+            type = "app";
+            program = "${flogravityPackageCheck}";
+          };
+        }
       );
 
       overlays = {

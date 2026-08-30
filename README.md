@@ -42,13 +42,12 @@ environment.systemPackages = with pkgs; [
 The HFS image's Unicode bundle and executable names are truncated by `undmg`,
 so the derivation identifies the sole application structurally and restores the
 names declared by its `Info.plist`. It checks the pinned bundle identity,
-architectures, and embedded upstream Team ID before applying a complete ad-hoc
-signature that preserves the hardened-runtime flags and entitlements, then
-strictly verifies the normalized bundle. The current upstream bundle does not
-pass strict signature verification even when mounted directly; the ad-hoc
-signature preserves installed bundle integrity but does not recreate Developer
-ID trust. The application is closed source and offers a separately licensed Pro
-edition, so the package is marked unfree.
+architectures, Developer ID authority, Team ID, and hardened-runtime flag, then
+strictly verifies the normalized bundle without re-signing it. Restoring the
+two names also restores the validity of the original notarized Developer ID
+seal, so the installed application retains its upstream trust and restricted
+entitlements. The application is closed source and offers a separately
+licensed Pro edition, so the package is marked unfree.
 
 Import its focused overlay module:
 
@@ -121,9 +120,11 @@ daily. FloGravity is discovered from its official stable Sparkle appcast. For a
 new candidate release, the updater accepts only immutable versioned assets from
 the reviewed download host, verifies its Sparkle Ed25519 signature, computes
 the complete SHA-256, and checks the bundle identity, universal architectures,
-and embedded signing identity. Future versions must also have a valid,
-notarized Developer ID signature; the known-invalid 4.12.0 signature is the
-only explicit exception and is handled by the package's complete ad-hoc signing.
+and embedded signing identity. Every accepted version must have a valid,
+notarized Developer ID signature; there are no version-specific exceptions.
+Before publishing a changed FloGravity source, the native updater workflow also
+builds the normalized Nix output and reassesses its preserved signature with
+Gatekeeper before committing the source metadata.
 ShardX Launcher requires one exact Apple Silicon release asset, downloads it
 from an allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset
 digest when available.

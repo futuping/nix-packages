@@ -63,17 +63,29 @@ stdenvNoCC.mkDerivation {
       mv "$extracted_executable" "$executable"
     fi
 
-    # Once both names are restored, codesign can read the embedded upstream
-    # identity even though the distributed signature itself is invalid.
-    upstream_signature_details="$(
-      /usr/bin/codesign -d --verbose=4 "$application" 2>&1 || true
+    # The extracted bytes are unchanged: only undmg's truncated HFS Unicode
+    # names need restoring for the original Developer ID seal to validate.
+    signature_details="$(
+      /usr/bin/codesign -d --verbose=4 "$application" 2>&1
     )"
-    if ! printf '%s\n' "$upstream_signature_details" | grep -Fqx 'Identifier=me.vkr.fg'; then
+    if ! printf '%s\n' "$signature_details" | grep -Fqx 'Identifier=me.vkr.fg'; then
       echo "unexpected FloGravity signing identifier" >&2
       exit 1
     fi
-    if ! printf '%s\n' "$upstream_signature_details" | grep -Fqx 'TeamIdentifier=3MFNWTLLFG'; then
+    if ! printf '%s\n' "$signature_details" | grep -Fqx 'TeamIdentifier=3MFNWTLLFG'; then
       echo "unexpected FloGravity signing Team ID" >&2
+      exit 1
+    fi
+    if ! printf '%s\n' "$signature_details" | grep -Fqx 'Authority=Developer ID Application: JUN LIU (3MFNWTLLFG)'; then
+      echo "unexpected FloGravity signing authority" >&2
+      exit 1
+    fi
+    if printf '%s\n' "$signature_details" | grep -Fqx 'Signature=adhoc'; then
+      echo "FloGravity must retain its upstream Developer ID signature" >&2
+      exit 1
+    fi
+    if ! printf '%s\n' "$signature_details" | grep -Eq '^CodeDirectory .*flags=.*runtime'; then
+      echo "FloGravity signature is missing the hardened runtime" >&2
       exit 1
     fi
 
@@ -90,19 +102,11 @@ stdenvNoCC.mkDerivation {
     done
     test "$architecture_count" -eq 2
 
-    # The distributed 4.12.0 bundle fails strict verification even when
-    # mounted directly from its read-only DMG. Sign the complete normalized
-    # bundle ad hoc so the installed result has a valid internal seal.
-    /usr/bin/codesign \
-      --force \
-      --deep \
-      --preserve-metadata=entitlements,flags,runtime \
-      --sign - \
-      "$application"
-    final_signature_details="$(/usr/bin/codesign -d --verbose=4 "$application" 2>&1)"
-    printf '%s\n' "$final_signature_details" | grep -Fqx 'Signature=adhoc'
-    printf '%s\n' "$final_signature_details" | grep -Eq '^CodeDirectory .*flags=.*runtime'
+    /usr/bin/codesign --verify --deep --strict --verbose=2 "$application"
 
+    # These upstream-signed entitlements back FloGravity's integrations. Keep
+    # them intact instead of replacing the signature with an ad-hoc one that
+    # macOS would reject for containing restricted entitlements.
     main_entitlements="$(/usr/bin/codesign -d --entitlements - "$application" 2>/dev/null)"
     for entitlement in \
       com.apple.developer.aps-environment \
@@ -115,7 +119,7 @@ stdenvNoCC.mkDerivation {
       com.apple.security.device.camera
     do
       if ! printf '%s\n' "$main_entitlements" | grep -Fq "$entitlement"; then
-        echo "missing preserved FloGravity entitlement: $entitlement" >&2
+        echo "missing FloGravity entitlement: $entitlement" >&2
         exit 1
       fi
     done
@@ -130,12 +134,11 @@ stdenvNoCC.mkDerivation {
       printf '%s\n' "$extension_entitlements" | grep -Fq 'group.me.vkr.fg'
     done
 
-    /usr/bin/codesign --verify --deep --strict --verbose=2 "$application"
-
     runHook postInstall
   '';
 
-  # Keep the verified ad-hoc signature intact after normalizing the bundle.
+  # Keep the verified upstream Developer ID signature intact after restoring
+  # the two HFS Unicode names.
   dontFixup = true;
 
   meta = {

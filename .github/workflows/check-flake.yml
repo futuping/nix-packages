@@ -31,8 +31,8 @@ jobs:
           set -euo pipefail
           test "$(/usr/bin/uname -m)" = arm64
 
-      - name: Build the locked FloGravity package
-        run: nix build --no-link --no-update-lock-file .#checks.aarch64-darwin.flogravity-package
+      - name: Build and assess the locked FloGravity package
+        run: nix run --no-update-lock-file .#flogravity-package-check
 
   python-compatibility:
     name: Python ${{ matrix.python-version }} compatibility
@@ -83,6 +83,7 @@ jobs:
 
           nix eval --raw .#devShells.aarch64-darwin.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.aarch64-darwin.maintainer-check.program >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.flogravity-package-check.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-ego-lite.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-flogravity.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-shardx-launcher.program >/dev/null

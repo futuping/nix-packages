@@ -42,6 +42,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: nix run --no-update-lock-file .#update-shardx-launcher
 
+      - name: Validate updated FloGravity package before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- packages/flogravity-source.json; then
+            echo "FloGravity did not change."
+          else
+            nix run --no-update-lock-file .#flogravity-package-check
+          fi
+
       - name: Commit update or keep scheduled workflow active
         shell: bash
         run: |
