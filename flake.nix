@@ -209,6 +209,12 @@
             type = "app";
             program = "${neomacsPackageCheck}";
           };
+          neomacs-finder-check = {
+            type = "app";
+            program = "${aarch64DarwinPkgs.callPackage ./tests/neomacs-finder.nix {
+              upstreamSource = neomacs;
+            }}";
+          };
         }
       );
 

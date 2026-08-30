@@ -97,9 +97,41 @@ exact adopted source revision; the input URL no longer freezes one commit.
 This intentionally follows development revisions rather than stable releases.
 The package keeps the upstream `neomacs` command and adds
 `Applications/Neomacs.app` for Finder and Dock launching. The app contains the
-upstream icon and a small native launcher that executes the dependency-tracked
+upstream icon and a small native launcher that starts the dependency-tracked
 upstream CLI wrapper. It is a Nix application entry point, not a self-contained
 redistributable DMG. Nix-darwin exposes it through `/Applications/Nix Apps`.
+
+For Finder's **Open With** menu, the bundle declares text and source files as
+editable, with explicit extensions including `.md`, `.nix`, `.org`, `.el`,
+`.json`, `.yaml`, `.toml`, and common programming languages. The extension
+inventory follows [GNU Emacs' macOS declaration](https://github.com/emacs-mirror/emacs/blob/master/nextstep/templates/Info.plist.in)
+and adds common modern text formats. It is not an exhaustive list of files
+Emacs can read, nor a promise that every language mode, grammar or language
+server is bundled. File association and syntax-aware editing are separate.
+
+All entries use `LSHandlerRank = Alternate`; the package does not set or reset
+the user's default applications. macOS can still choose an alternate handler
+when a file has no preferred handler; this is not an absolute opt-out from its
+automatic selection. A generic `public.data` Viewer fallback
+permits unknown or extensionless flat files without claiming folders or app
+bundles. Only system-defined UTIs are referenced; no format ownership or
+private UTI is declared. Explicit extension associations stay separate from
+the generic `public.text` entry because
+[Apple's document-type rules](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html)
+make `LSItemContentTypes` override extensions in the same dictionary.
+
+The launcher receives Finder's file-open Apple events, including subsequent
+opens while it is already running. Each Finder batch starts a separate Neomacs
+session with literal file arguments; it does not inject Lisp, enable a server,
+or change the user's initialization. The event receiver has no separate Dock
+icon and normally exits after its last session ends. Reopening the app
+activates the latest session. Direct command-line arguments still execute the
+upstream CLI unchanged. This bridge is necessary because the pinned upstream
+winit application delegate does not handle Finder open-document events; it
+does not promise buffer reuse in an already-running Neomacs session.
+Explicitly quitting or force-quitting the receiver does not kill editing
+sessions or discard their unsaved buffers; a later Finder open starts a new
+receiver.
 
 The launcher is built separately from Neomacs: adding or changing the entry
 point reuses an unchanged upstream build. A new upstream Store path generates
@@ -129,7 +161,26 @@ metadata, icon and signature. It does not start the GUI or load user
 configuration, and is not a full interactive application test. The
 `checks.aarch64-darwin.neomacs-launcher` fixture additionally verifies argument
 forwarding and automatic retargeting when the upstream package path changes,
-without compiling Neomacs.
+and tests the production Apple-event delegate without a GUI or real Neomacs.
+
+For an opt-in LaunchServices integration test in a logged-in macOS session,
+run from a writable checkout outside system temporary directories:
+
+```sh
+nix run --no-update-lock-file .#neomacs-finder-check
+```
+
+This uses a uniquely identified temporary app and a fake Neomacs process. It
+checks cold and warm file opens, multi-file arguments, spaces and Unicode,
+`.nix`/`.md` Open With candidates, ordinary app launching, and receiver shutdown.
+The fixture uses a unique child directory in the current workspace; set
+`NEOMACS_FINDER_TEST_ROOT` to choose another writable workspace. macOS may
+exclude apps staged under system temporary directories from candidate
+discovery even when registration reports success. The test temporarily
+registers only that fixture with LaunchServices, unregisters it on completion,
+removes its files, and never sets
+default file handlers. It does not test Neomacs rendering, window focus, or its
+language modes. No GUI test is run by the headless package check.
 
 Import its focused overlay module:
 

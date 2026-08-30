@@ -3,7 +3,6 @@
   libicns,
   replaceVars,
   runCommandCC,
-  writeText,
   upstream,
   upstreamSource,
 }:
@@ -11,29 +10,13 @@
 let
   appVersion =
     (builtins.fromTOML (builtins.readFile "${upstreamSource}/Cargo.toml")).workspace.package.version;
-  launcher = replaceVars ./neomacs-launcher.c {
+  launcher = replaceVars ./neomacs-launcher.m {
     neomacsProgram = "${upstream}/bin/neomacs";
   };
-  infoPlist = writeText "neomacs-Info.plist" ''
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-      <key>CFBundleName</key><string>Neomacs</string>
-      <key>CFBundleDisplayName</key><string>Neomacs</string>
-      <key>CFBundleIdentifier</key><string>org.neomacs.nix</string>
-      <key>CFBundleExecutable</key><string>neomacs-launcher</string>
-      <key>CFBundlePackageType</key><string>APPL</string>
-      <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-      <key>CFBundleVersion</key><string>${lib.escapeXML appVersion}</string>
-      <key>CFBundleShortVersionString</key><string>${lib.escapeXML appVersion}</string>
-      <key>CFBundleGetInfoString</key><string>Neomacs ${lib.escapeXML upstream.version} (Nix)</string>
-      <key>CFBundleIconFile</key><string>neomacs</string>
-      <key>LSMinimumSystemVersion</key><string>12.0</string>
-      <key>NSHighResolutionCapable</key><true/>
-    </dict>
-    </plist>
-  '';
+  infoPlist = replaceVars ./neomacs-Info.plist.in {
+    appVersion = lib.escapeXML appVersion;
+    upstreamVersion = lib.escapeXML upstream.version;
+  };
 in
 runCommandCC "neomacs-${upstream.version}"
   {
@@ -44,7 +27,7 @@ runCommandCC "neomacs-${upstream.version}"
       platforms = [ "aarch64-darwin" ];
     };
     passthru = {
-      inherit upstream;
+      inherit upstream launcher;
     };
   }
   ''
@@ -57,7 +40,8 @@ runCommandCC "neomacs-${upstream.version}"
     cp ${infoPlist} "$application/Contents/Info.plist"
     png2icns "$application/Contents/Resources/neomacs.icns" \
       ${upstreamSource}/assets/logo-128.png
-    $CC -std=c99 -Wall -Wextra -Werror -Os ${launcher} \
+    $CC -x objective-c -fobjc-arc -fblocks -Wall -Wextra -Werror -Os ${launcher} \
+      -framework Cocoa \
       -o "$application/Contents/MacOS/neomacs-launcher"
 
     # Sign only our new launcher bundle. Never modify or re-sign Neomacs.

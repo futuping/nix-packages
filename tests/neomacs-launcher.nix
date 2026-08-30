@@ -1,6 +1,7 @@
 {
   callPackage,
   runCommand,
+  runCommandCC,
   writeShellScript,
   upstreamSource,
 }:
@@ -28,7 +29,7 @@ let
   first = makeApplication firstUpstream;
   second = makeApplication secondUpstream;
 in
-runCommand "neomacs-launcher-check" { } ''
+runCommandCC "neomacs-launcher-check" { } ''
   first="${first}/Applications/Neomacs.app"
   second="${second}/Applications/Neomacs.app"
   test "${first}" != "${second}"
@@ -46,5 +47,12 @@ runCommand "neomacs-launcher-check" { } ''
     /usr/bin/codesign --verify --deep --strict "$application"
     test -s "$application/Contents/Resources/neomacs.icns"
   done
-  touch "$out"
+
+  cp ${first.launcher} neomacs-launcher.m
+  cp ${./neomacs-launcher-events.m} neomacs-launcher-events.m
+  $CC -fobjc-arc -fblocks -Wall -Wextra -Werror -Os neomacs-launcher-events.m \
+    -framework Cocoa -framework CoreServices -o events-check
+  ./events-check
+  mkdir -p "$out/bin"
+  cp events-check "$out/bin/neomacs-launcher-events"
 ''
