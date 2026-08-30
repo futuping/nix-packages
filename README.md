@@ -141,6 +141,10 @@ program and its runtime resources are not modified or re-signed. Nix reuses
 matching outputs or binary caches when available; otherwise it compiles the
 upstream source and its missing dependencies.
 
+The launcher also uses upstream's pinned nixpkgs, and the overlay forwards the
+exact same derivation built by CI. Following a consumer's separate nixpkgs pin
+therefore does not change Neomacs's compiler inputs or invalidate its cache.
+
 From a writable checkout, update only Neomacs and retain the candidate lock only
 after a native build and headless package check succeed:
 
@@ -198,6 +202,35 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
+### Binary cache
+
+Validated Apple Silicon Neomacs builds are published to the public `utitsoga`
+Cachix cache. Consumers can add it without installing Cachix or changing the
+bare package selection:
+
+```nix
+nix.settings = {
+  extra-substituters = [ "https://utitsoga.cachix.org" ];
+  extra-trusted-public-keys = [
+    "utitsoga.cachix.org-1:vEIve6o6RwvjUotznYxEDqQmBPV8SWaOupBsA2GAq4k="
+  ];
+};
+```
+
+Determinate Nix users should put the equivalent two assignments in
+`/etc/nix/nix.custom.conf`, which its managed `nix.conf` includes. Keep
+signature verification enabled. The cache is additive to the configured
+upstream caches and does not replace `cache.nixos.org`.
+
+CI publishes only after the native launcher, package, signature, smoke, and
+standalone-lock checks pass. It uploads the final package's runtime closure and
+Crane's small import-from-derivation source, not the Rust build toolchain or the
+whole Store. A fresh Linux runner then disables every local and remote builder
+and proves that the complete Darwin package can be substituted. If any output
+is missing or has different locked inputs, Nix fails that check instead of
+building it. Cache eviction or an input change can still cause a future local
+build until CI has published the exact new Store paths.
+
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
@@ -224,7 +257,8 @@ application version also fails for manual review.
 The same daily workflow updates Neomacs in a separate, sequential Apple Silicon
 job after the binary updaters. It updates only the Neomacs input and its upstream
 dependency lock graph, builds and smoke-tests the candidate, and checks the
-standalone flake before committing `flake.lock`. A failed candidate or timeout
+standalone flake, then uploads the candidate to the binary cache before
+committing `flake.lock`. A failed candidate, cache upload, or timeout
 does not publish a Neomacs update or block the preceding DMG updates. The
 120-minute budget accommodates source builds without promising cache hits.
 Consumers still need to refresh their own lock; system activation is manual.
@@ -237,7 +271,8 @@ contents.
 ## Maintainer environment
 
 The flake pins the maintainer toolchain, including Python 3.14 and the Nix CLI
-used for Neomacs lock updates and standalone evaluation.
+used for Neomacs lock updates and standalone evaluation. The maintainer check
+also parses workflow YAML with the pinned `yq` executable before running tests.
 Enter it from the repository root with:
 
 ```sh
@@ -250,6 +285,15 @@ host `python3` or user-installed Python packages:
 ```sh
 nix run --no-update-lock-file .#maintainer-check
 ```
+
+After native package validation, maintainers can publish the selected checkout
+with `nix run --no-update-lock-file .#push-neomacs-cache`. The app uses the
+repository's locked Nix and Cachix executables. Set `CACHIX_AUTH_TOKEN` only in
+the publishing process environment; never put a token in the flake, source
+files, URLs, or command arguments. CI obtains it from the repository's
+`CACHIX_AUTH_TOKEN` Actions Secret only for successful publication on `main`.
+Pull requests cannot publish. Daily updates cache the candidate before
+committing its lock, and fail without publishing the lock if upload fails.
 
 CI also runs the complete offline suite on Python 3.9, the declared minimum
 compatible version, and Python 3.14, the current maintainer version. The

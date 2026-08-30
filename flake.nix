@@ -90,6 +90,7 @@
             export NIX_PACKAGES_BASH=${pkgs.bash}/bin/bash
             export PATH=${pkgs.lib.makeBinPath [ pkgs.coreutils ]}:"$PATH"
             cd ${self}
+            ${pkgs.yq-go}/bin/yq eval '.' .github/workflows/*.yml >/dev/null
             ${python}/bin/python3 --version
             exec ${python}/bin/python3 -m unittest discover -s tests
           '';
@@ -120,6 +121,7 @@
             packages = [
               python
               pkgs.nix
+              pkgs.yq-go
             ];
             shellHook = pythonEnvironment + ''
               export NIX_PACKAGES_BASH=${pkgs.bash}/bin/bash
@@ -130,6 +132,16 @@
             program = "${maintainerCheck}";
           };
           updaterApps = nixpkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+            push-neomacs-cache = {
+              type = "app";
+              program = "${pkgs.writeShellScript "nix-packages-push-neomacs-cache" ''
+                set -euo pipefail
+                export NIX_PACKAGES_NIX=${pkgs.nix}/bin/nix
+                export NIX_PACKAGES_CACHIX=${pkgs.cachix}/bin/cachix
+                export PATH=${pkgs.lib.makeBinPath [ pkgs.coreutils ]}:"$PATH"
+                exec ${pkgs.bash}/bin/bash ${./scripts/push_neomacs_cache.sh} "$@"
+              ''}";
+            };
             update-neomacs = {
               type = "app";
               program = "${pkgs.writeShellScript "nix-packages-update-neomacs" ''
@@ -160,15 +172,17 @@
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
       };
-      neomacsPackageFor =
-        pkgs:
-        pkgs.callPackage ./packages/neomacs.nix {
-          upstream = neomacs.packages.${pkgs.stdenv.hostPlatform.system}.neomacs;
-          upstreamSource = neomacs;
-        };
-      neomacsPackage = neomacsPackageFor aarch64DarwinPkgs;
+      # Keep the launcher and core on upstream's lock. A consumer's nixpkgs
+      # follows edge or overlays must not change the output published by CI.
+      neomacsPkgs = import neomacs.inputs.nixpkgs { system = "aarch64-darwin"; };
+      neomacsPackage = neomacsPkgs.callPackage ./packages/neomacs.nix {
+        upstream = neomacs.packages.aarch64-darwin.neomacs;
+        upstreamSource = neomacs;
+      };
       neomacsOverlay = final: _prev: {
-        neomacs = neomacsPackageFor final;
+        neomacs =
+          assert final.stdenv.hostPlatform.system == "aarch64-darwin";
+          neomacsPackage;
       };
     in
     {

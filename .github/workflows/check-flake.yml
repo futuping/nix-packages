@@ -17,13 +17,20 @@ concurrency:
 jobs:
   neomacs-package:
     name: Build Neomacs on Apple silicon
+    needs: [check, python-compatibility, flogravity-package]
     runs-on: macos-15
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            extra-substituters = https://utitsoga.cachix.org
+            extra-trusted-public-keys = utitsoga.cachix.org-1:vEIve6o6RwvjUotznYxEDqQmBPV8SWaOupBsA2GAq4k=
 
       - name: Verify Apple silicon package runner
         run: test "$(/usr/bin/uname -m)" = arm64
@@ -39,13 +46,50 @@ jobs:
       - name: Check the standalone lock and all flake outputs
         run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
 
+      # PRs only read the public cache. Never expose the write token to them
+      # or automatically upload outputs before the native checks have passed.
+      - name: Publish validated Neomacs outputs to Cachix
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: nix run --no-update-lock-file .#push-neomacs-cache
+
+  neomacs-cache-consumer:
+    name: Verify Neomacs is downloadable without building
+    needs: neomacs-package
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            extra-substituters = https://utitsoga.cachix.org
+            extra-trusted-public-keys = utitsoga.cachix.org-1:vEIve6o6RwvjUotznYxEDqQmBPV8SWaOupBsA2GAq4k=
+
+      # This fresh Linux Store cannot execute a Darwin build. Empty builders
+      # and zero local jobs turn every missing NAR, including Crane's IFD
+      # source, into a hard failure instead of silently compiling a fallback.
+      - name: Substitute the complete Apple silicon package from caches
+        run: |
+          nix build --no-link --no-update-lock-file \
+            --max-jobs 0 --builders '' \
+            .#packages.aarch64-darwin.neomacs
+
   flogravity-package:
     name: Build FloGravity on Apple silicon
     runs-on: macos-15
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
@@ -71,7 +115,9 @@ jobs:
           - "3.14"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # Python 3.9 is the declared compatibility floor. Python 3.14 is the
       # explicitly selected maintainer version in the locked Nix dev shell.
@@ -96,7 +142,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
@@ -112,6 +160,7 @@ jobs:
           nix eval --raw .#apps.aarch64-darwin.update-flogravity.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-shardx-launcher.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-neomacs.program >/dev/null
+          nix eval --raw .#apps.aarch64-darwin.push-neomacs-cache.program >/dev/null
           nix eval --raw .#devShells.x86_64-linux.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.x86_64-linux.maintainer-check.program >/dev/null
 

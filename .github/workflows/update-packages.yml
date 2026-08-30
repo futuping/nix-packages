@@ -18,7 +18,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
@@ -54,9 +56,17 @@ jobs:
           fi
 
       - name: Commit update or keep scheduled workflow active
+        env:
+          GH_PUSH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # Supply credentials only to this publication step, never persist
+          # a write token in the checkout used by package validation.
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PUSH_TOKEN" | base64 | tr -d '\n')"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -86,18 +96,23 @@ jobs:
   update-neomacs:
     name: Update Neomacs after native validation
     needs: update-packages
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: macos-15
     timeout-minutes: 120
 
     steps:
       # Read main again after the binary updater's possible commit. A failing
       # Neomacs development revision cannot block or overwrite those updates.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            extra-substituters = https://utitsoga.cachix.org
+            extra-trusted-public-keys = utitsoga.cachix.org-1:vEIve6o6RwvjUotznYxEDqQmBPV8SWaOupBsA2GAq4k=
 
       - name: Verify Apple silicon updater runner
         run: test "$(/usr/bin/uname -m)" = arm64
@@ -120,7 +135,25 @@ jobs:
             nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
           fi
 
+      # Publish the cache before exposing a new lock to consumers. Upload
+      # failure leaves the remote lock unchanged; an unchanged lock is cheap.
+      - name: Cache the validated Neomacs candidate
+        if: ${{ github.ref == 'refs/heads/main' }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- flake.lock; then
+            echo "No new Neomacs candidate to cache."
+          else
+            nix run --no-update-lock-file .#push-neomacs-cache
+          fi
+
       - name: Publish only a validated Neomacs lock
+        env:
+          GH_PUSH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -129,6 +162,10 @@ jobs:
             echo "Neomacs lock did not change."
             exit 0
           fi
+
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PUSH_TOKEN" | base64 | tr -d '\n')"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
