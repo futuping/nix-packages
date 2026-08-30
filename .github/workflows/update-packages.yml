@@ -109,7 +109,16 @@ jobs:
         run: nix run --no-update-lock-file .#update-neomacs
 
       - name: Validate the candidate standalone lock
-        run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- flake.lock; then
+            echo "No Neomacs candidate to validate."
+          else
+            # The updater has already built this candidate and its Cargo metadata.
+            nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
+          fi
 
       - name: Publish only a validated Neomacs lock
         shell: bash
