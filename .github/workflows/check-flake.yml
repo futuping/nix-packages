@@ -28,13 +28,13 @@ jobs:
       - name: Verify Apple silicon package runner
         run: test "$(/usr/bin/uname -m)" = arm64
 
-      # Neomacs evaluation realizes Darwin-only build helpers, so keep this
-      # full check on its native runner instead of the Linux maintainer job.
-      - name: Check the standalone lock and all flake outputs
-        run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
-
       - name: Build and smoke-test the locked Neomacs package
         run: nix run --no-update-lock-file .#neomacs-package-check
+
+      # Crane reads generated Cargo metadata during evaluation. Realize it in
+      # the native build above before the read-only no-build flake check.
+      - name: Check the standalone lock and all flake outputs
+        run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
 
   flogravity-package:
     name: Build FloGravity on Apple silicon
