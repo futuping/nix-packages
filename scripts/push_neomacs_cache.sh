@@ -28,8 +28,9 @@ if [[ ! -f flake.nix || ! -f flake.lock ||
   exit 2
 fi
 
-# Do not scan the Store or upload cargoArtifacts/toolchains. The dummy source
-# is needed by Crane's import-from-derivation even for a cache-only consumer.
+# Do not scan the Store or select cargoArtifacts/toolchains as separate roots.
+# Cachix still follows all upstream runtime references, including pdump ones.
+# The dummy source is needed by Crane even for a cache-only consumer.
 # Complete both realizations before allowing Cachix to upload anything.
 outputs="$("$NIX_PACKAGES_NIX" build --no-link --no-update-lock-file --print-out-paths \
   .#packages.aarch64-darwin.neomacs \

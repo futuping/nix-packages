@@ -223,13 +223,22 @@ signature verification enabled. The cache is additive to the configured
 upstream caches and does not replace `cache.nixos.org`.
 
 CI publishes only after the native launcher, package, signature, smoke, and
-standalone-lock checks pass. It uploads the final package's runtime closure and
-Crane's small import-from-derivation source, not the Rust build toolchain or the
-whole Store. A fresh Linux runner then disables every local and remote builder
-and proves that the complete Darwin package can be substituted. If any output
-is missing or has different locked inputs, Nix fails that check instead of
-building it. Cache eviction or an input change can still cause a future local
-build until CI has published the exact new Store paths.
+standalone-lock checks pass. It selects the final package and Crane's small
+import-from-derivation source as cache roots, without scanning the whole Store.
+Cachix follows all transitive references from those roots. A fresh Linux runner
+then disables every local and remote builder and proves that the complete
+Darwin package can be substituted. If any output is missing or has different
+locked inputs, Nix fails that check instead of building it. Cache eviction or
+an input change can still cause a future local build until CI has published
+the exact new Store paths.
+
+The currently locked upstream pdump images retain build-environment references,
+including Cargo, Clang and dependency artifacts. These are therefore part of
+the upstream output's closure and are followed by the cache publisher, even
+though they are not selected as separate cache roots. Caching avoids local
+compilation; it does not by itself minimize that closure. This package preserves
+the upstream executables and runtime images; removing those references requires
+a separately validated upstream or runtime-packaging change.
 
 ## Automatic updates
 
