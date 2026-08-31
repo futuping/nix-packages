@@ -97,9 +97,13 @@ exact adopted source revision; the input URL no longer freezes one commit.
 This intentionally follows development revisions rather than stable releases.
 The package keeps the upstream `neomacs` command and adds
 `Applications/Neomacs.app` for Finder and Dock launching. The app contains the
-upstream icon and a small native launcher that starts the dependency-tracked
+[VSCodeEmacs icon](https://github.com/VSCodeEmacs/Emacs/blob/8df69304a75d4a1a86894c6529331da406157333/images/icon.png),
+pinned by revision and hash and converted to a 512x512 ICNS representation,
+and a small native launcher that starts the dependency-tracked
 upstream CLI wrapper. It is a Nix application entry point, not a self-contained
 redistributable DMG. Nix-darwin exposes it through `/Applications/Nix Apps`.
+The bundle includes an icon source notice; changing the icon does not rebuild
+the upstream Neomacs core.
 
 For Finder's **Open With** menu, the bundle declares text and source files as
 editable, with explicit extensions including `.md`, `.nix`, `.org`, `.el`,
@@ -132,6 +136,12 @@ does not promise buffer reuse in an already-running Neomacs session.
 Explicitly quitting or force-quitting the receiver does not kill editing
 sessions or discard their unsaved buffers; a later Finder open starts a new
 receiver.
+
+The bundle's display name is `Neomacs`, but the pinned upstream GUI runs as a
+separate `.neomacs-wrapped` process. Upstream's winit menu uses that process's
+name, which can also appear in the macOS menu bar. Changing the launcher's
+bundle metadata does not rename this child process. This package leaves the
+upstream process and its invocation/resource paths unchanged.
 
 The launcher is built separately from Neomacs: adding or changing the entry
 point reuses an unchanged upstream build. A new upstream Store path generates
@@ -239,6 +249,21 @@ though they are not selected as separate cache roots. Caching avoids local
 compilation; it does not by itself minimize that closure. This package preserves
 the upstream executables and runtime images; removing those references requires
 a separately validated upstream or runtime-packaging change.
+
+Cachix stores new Store paths alongside existing ones; pushing an already
+cached path [does not overwrite it](https://docs.cachix.org/faq#does-pushing-a-store-path-override-an-existing-entry).
+An icon-only update adds a small app output while reusing the same core path.
+The cache's 5 GB allowance counts compressed stored data, not the uncompressed
+local closure, and Cachix normally excludes paths already available from
+`cache.nixos.org`. At capacity, its
+[garbage collector](https://docs.cachix.org/garbage-collection) evicts unpinned
+paths by last access time; it does not implement "replace the previous app
+version" semantics. This workflow neither creates pins nor deletes cached
+paths. If explicit latest-version retention is added later, bound the pin's
+[revision count](https://docs.cachix.org/pins#controlling-retention-with-pins):
+pin revisions otherwise accumulate indefinitely. Verify the new cache upload
+before changing retention, and remember that eviction can make old consumer
+locks require rebuilding.
 
 ## Automatic updates
 

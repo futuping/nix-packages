@@ -69,6 +69,10 @@
         launcher="$application/Contents/MacOS/neomacs-launcher"
         test -x "$launcher"
         test -s "$application/Contents/Resources/neomacs.icns"
+        test -s "$application/Contents/Resources/icon-NOTICE.txt"
+        ${neomacsPkgs.libicns}/bin/icns2png --list \
+          "$application/Contents/Resources/neomacs.icns" \
+          | ${aarch64DarwinPkgs.gnugrep}/bin/grep -q '512x512'
         /usr/bin/plutil -lint "$application/Contents/Info.plist"
         /usr/bin/codesign --verify --deep --strict "$application"
         test "$("$launcher" --version)" = "$version"

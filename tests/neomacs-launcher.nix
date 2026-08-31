@@ -1,5 +1,6 @@
 {
   callPackage,
+  libicns,
   runCommand,
   runCommandCC,
   writeShellScript,
@@ -29,7 +30,7 @@ let
   first = makeApplication firstUpstream;
   second = makeApplication secondUpstream;
 in
-runCommandCC "neomacs-launcher-check" { } ''
+runCommandCC "neomacs-launcher-check" { nativeBuildInputs = [ libicns ]; } ''
   first="${first}/Applications/Neomacs.app"
   second="${second}/Applications/Neomacs.app"
   test "${first}" != "${second}"
@@ -46,6 +47,10 @@ runCommandCC "neomacs-launcher-check" { } ''
     /usr/bin/plutil -lint "$application/Contents/Info.plist"
     /usr/bin/codesign --verify --deep --strict "$application"
     test -s "$application/Contents/Resources/neomacs.icns"
+    test -s "$application/Contents/Resources/icon-NOTICE.txt"
+    # Check the actual high-resolution representation, not just file presence.
+    icns2png --list "$application/Contents/Resources/neomacs.icns" \
+      | grep -q '512x512'
   done
 
   cp ${first.launcher} neomacs-launcher.m

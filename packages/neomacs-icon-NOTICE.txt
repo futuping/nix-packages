@@ -1,0 +1,11 @@
+Neomacs application icon
+
+Artwork: VSCodeEmacs/Emacs, images/icon.png
+Source: https://github.com/VSCodeEmacs/Emacs/blob/8df69304a75d4a1a86894c6529331da406157333/images/icon.png
+Revision: 8df69304a75d4a1a86894c6529331da406157333
+
+The source project's package.json declares the MIT license. The source
+repository does not contain a separate LICENSE file at this revision.
+The artwork is converted to a standard 512x512 ICNS representation for macOS;
+its design is unchanged. The package's own license does not replace any
+upstream artwork rights or notices.
