@@ -67,11 +67,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1789300697,
-        "narHash": "sha256-xZUrR2MHCUlGvuVLxb90OgqSozL2/ySwCJ9MG4DxW2U=",
+        "lastModified": 1789391308,
+        "narHash": "sha256-+s9ie46nhzElJR1S9OpzdV94c7FkfTm/Psy6lssctQU=",
         "owner": "eval-exec",
         "repo": "neomacs",
-        "rev": "908d7e522e043db5a0bc00a67a7c8567ff88648d",
+        "rev": "b839ff7b29b16e70cacdb80a22a9228661c09a1f",
         "type": "github"
       },
       "original": {
