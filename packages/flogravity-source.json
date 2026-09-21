@@ -1,9 +1,9 @@
 {
-  "version": "5.0.1",
-  "bundleVersion": "181",
+  "version": "5.0.6",
+  "bundleVersion": "186",
   "minimumSystemVersion": "14.0",
-  "url": "https://d.vkr.me/fg/mac/releases/5.0.1/FloGravity-5.0.1.dmg",
-  "hash": "sha256-50AT8VXA+zmjq64hrm5nlaoRAKbHguWk+bNOUJAmrEQ=",
-  "size": 49020767,
-  "sparkleSignature": "ZU6jlfD7pZQ5gnaCUKt9Jz3l2LHFFZk9nKjUu0CV2UZkDdCSvobgCIM9ozGGg4QebiYzvJcJ25iE37huOSWSAA=="
+  "url": "https://d.vkr.me/fg/mac/releases/5.0.6/FloGravity-5.0.6.dmg",
+  "hash": "sha256-lVrAty2FfmBS6KIJ6A/K69SRVCY4r+LfGVkoH1m9V2E=",
+  "size": 49345661,
+  "sparkleSignature": "KDvAO8lgjCiBE/nQISMPh1PNGfLkuoYYfQ6NZRrdi2udl7yl8Y5zydrX9RSovAGfEdstoiLINcEVfZwwtnwUBQ=="
 }
