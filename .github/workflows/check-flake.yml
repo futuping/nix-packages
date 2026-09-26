@@ -102,6 +102,9 @@ jobs:
       - name: Build and assess the locked FloGravity package
         run: nix run --no-update-lock-file .#flogravity-package-check
 
+      - name: Build and assess the locked ego lite package
+        run: nix run --no-update-lock-file .#ego-lite-package-check
+
   python-compatibility:
     name: Python ${{ matrix.python-version }} compatibility
     runs-on: ubuntu-latest
@@ -155,6 +158,7 @@ jobs:
 
           nix eval --raw .#devShells.aarch64-darwin.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.aarch64-darwin.maintainer-check.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.ego-lite-package-check.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.flogravity-package-check.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-ego-lite.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-flogravity.program >/dev/null
@@ -167,12 +171,15 @@ jobs:
       - name: Test through the locked maintainer environment
         run: nix run --no-update-lock-file .#maintainer-check
 
-      - name: Check locked FloGravity package, overlay, and module
+      - name: Check locked binary packages, overlays, and modules
         shell: bash
         run: |
           set -euo pipefail
 
           nix flake metadata --no-update-lock-file >/dev/null
+          nix eval --raw --no-update-lock-file .#packages.aarch64-darwin.ego-lite.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.ego-lite-package.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.ego-lite-overlay.drvPath >/dev/null
           nix eval --raw .#packages.aarch64-darwin.flogravity.drvPath >/dev/null
           nix eval --raw .#checks.aarch64-darwin.flogravity-package.drvPath >/dev/null
           nix eval --raw .#checks.aarch64-darwin.flogravity-overlay.drvPath >/dev/null

@@ -281,12 +281,20 @@ ShardX Launcher requires one exact Apple Silicon release asset, downloads it
 from an allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset
 digest when available.
 
-ego lite uses a mutable official CDN URL instead of versioned release assets.
+ego lite follows the public website's canonical Apple Silicon CDN URL instead
+of versioned release assets. Referral-channel URLs can retain older installers
+and are not used as the release source.
 Its updater cross-checks the downloaded SHA-256 against the CDN's S3 metadata,
 records the S3 version ID, mounts the DMG on macOS, and validates the bundle
 version, bundle ID, Developer ID authority, Team ID, executable architecture,
-strict code signature, and bundled CLI. Any changed artifact under an unchanged
+strict code signature, and bundled CLI. Validation copies the bundle without
+HFS resource forks and Finder metadata, matching the data files installed by
+`undmg`; it never re-signs the application or skips signature verification.
+Any changed artifact under an unchanged
 application version also fails for manual review.
+The native CI and updater workflow also run
+`nix run --no-update-lock-file .#ego-lite-package-check` to verify the final
+Nix bundle's preserved Developer ID signature and notarization.
 
 The same daily workflow updates Neomacs in a separate, sequential Apple Silicon
 job after the binary updaters. It updates only the Neomacs input and its upstream

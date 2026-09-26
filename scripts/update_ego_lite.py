@@ -16,10 +16,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
-DOWNLOAD_URL = (
-    "https://cdn.ego.app/channel/egobrowser_npx_referral/"
-    "setup/macos/arm64/egolite.dmg"
-)
+DOWNLOAD_URL = "https://cdn.ego.app/setup/macos/arm64/egolite.dmg"
 DOWNLOAD_HOST = "cdn.ego.app"
 APP_NAME = "ego lite.app"
 BUNDLE_ID = "com.citrolabs.ego.lite"
@@ -182,6 +179,16 @@ def inspect_application(dmg_path: Path) -> tuple[str, str]:
                 names = sorted(application.name for application in applications)
                 raise UpdateError(f"unexpected application bundles in DMG: {names}")
             application = applications[0]
+
+            # HFS installers can carry Finder metadata that codesign rejects.
+            # Validate the same data-fork-only bundle that undmg installs,
+            # retaining and strictly checking the original Developer ID seal.
+            validation_copy = Path(temporary) / APP_NAME
+            command_output(
+                ["/usr/bin/ditto", "--norsrc", str(application), str(validation_copy)],
+                "copy application for signature validation",
+            )
+            application = validation_copy
 
             try:
                 info = plistlib.loads(

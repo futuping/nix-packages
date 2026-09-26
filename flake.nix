@@ -27,6 +27,22 @@
         system = "aarch64-darwin";
         config.allowUnfree = true;
       };
+      egoLitePackageCheck = aarch64DarwinPkgs.writeShellScript "ego-lite-package-check" ''
+        set -euo pipefail
+        export LC_ALL=C
+
+        application="${self.packages.aarch64-darwin.ego-lite}/Applications/ego lite.app"
+        signature_details="$(/usr/bin/codesign -d --verbose=4 "$application" 2>&1)"
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'Authority=Developer ID Application: CITRO LABS PTE. LIMITED (JGQLC6YQYJ)'
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'TeamIdentifier=JGQLC6YQYJ'
+        /usr/bin/codesign --verify --deep --strict "$application"
+        gatekeeper="$(/usr/sbin/spctl --assess --type execute --verbose=4 "$application" 2>&1)"
+        printf '%s\n' "$gatekeeper" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'source=Notarized Developer ID'
+        test -x "${self.packages.aarch64-darwin.ego-lite}/bin/ego-browser"
+      '';
       flogravityPackageCheck = aarch64DarwinPkgs.writeShellScript "flogravity-package-check" ''
         set -euo pipefail
         export LC_ALL=C
@@ -198,6 +214,8 @@
       };
 
       checks.aarch64-darwin = {
+        ego-lite-package = self.packages.aarch64-darwin.ego-lite;
+        ego-lite-overlay = (aarch64DarwinPkgs.extend egoLiteOverlay).ego-lite;
         flogravity-package = self.packages.aarch64-darwin.flogravity;
         flogravity-overlay = (aarch64DarwinPkgs.extend flogravityOverlay).flogravity;
         neomacs-package = self.packages.aarch64-darwin.neomacs;
@@ -219,6 +237,10 @@
         }
         // maintainer.${system}.updaterApps
         // nixpkgs.lib.optionalAttrs (system == "aarch64-darwin") {
+          ego-lite-package-check = {
+            type = "app";
+            program = "${egoLitePackageCheck}";
+          };
           flogravity-package-check = {
             type = "app";
             program = "${flogravityPackageCheck}";

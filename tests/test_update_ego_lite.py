@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+import plistlib
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -51,6 +54,25 @@ class UpdateEgoLiteTests(unittest.TestCase):
             update_ego_lite.validate_download_url(
                 "https://example.com/setup/macos/arm64/egolite.dmg"
             )
+
+    def test_download_url_tracks_the_public_apple_silicon_release(self):
+        self.assertEqual(
+            update_ego_lite.DOWNLOAD_URL,
+            "https://cdn.ego.app/setup/macos/arm64/egolite.dmg",
+        )
+        update_ego_lite.validate_download_url(update_ego_lite.DOWNLOAD_URL)
+
+    def test_validate_download_url_rejects_other_channels_and_architectures(self):
+        for url in (
+            "https://cdn.ego.app/channel/egobrowser_npx_referral/"
+            "setup/macos/arm64/egolite.dmg",
+            "https://cdn.ego.app/setup/macos/x64/egolite.dmg",
+            "https://cdn.ego.app/setup/macos/arm64/egolite.dmg?channel=preview",
+        ):
+            with self.subTest(url=url), self.assertRaisesRegex(
+                update_ego_lite.UpdateError, "unexpected download"
+            ):
+                update_ego_lite.validate_download_url(url)
 
     def test_response_validators_accept_expected_metadata(self):
         headers = {
@@ -157,6 +179,76 @@ class UpdateEgoLiteTests(unittest.TestCase):
 
             self.assertTrue(changed)
             self.assertEqual(path.read_bytes(), before)
+
+    def application_commands(self, *, invalid_signature=False, copy_failure=False):
+        def command_result(command):
+            output = ""
+            error = ""
+            status = 0
+            if command[:2] == ["/usr/bin/hdiutil", "attach"]:
+                app = Path(command[-1]) / update_ego_lite.APP_NAME
+                contents = app / "Contents"
+                contents.mkdir(parents=True)
+                (contents / "Info.plist").write_bytes(plistlib.dumps({
+                    "CFBundleIdentifier": update_ego_lite.BUNDLE_ID,
+                    "CFBundleShortVersionString": "0.5.1.13",
+                    "CFBundleVersion": "5.1.13",
+                    "CFBundleExecutable": update_ego_lite.EXECUTABLE_NAME,
+                }))
+                helper = contents / (
+                    "Frameworks/ego Framework.framework/Versions/Current/"
+                    "Helpers/ego-browser"
+                )
+                helper.parent.mkdir(parents=True)
+                helper.write_bytes(b"upstream executable")
+                helper.chmod(0o755)
+            elif command[0] == "/usr/bin/ditto":
+                if copy_failure:
+                    status, error = 1, "copy failed"
+                else:
+                    shutil.copytree(command[-2], command[-1])
+            elif command[0] == "/usr/bin/lipo":
+                output = "arm64"
+            elif command[:2] == ["/usr/bin/codesign", "-dv"]:
+                error = (
+                    f"TeamIdentifier={update_ego_lite.TEAM_ID}\n"
+                    f"Authority={update_ego_lite.SIGNING_AUTHORITY}\n"
+                )
+            elif command[:2] == ["/usr/bin/codesign", "--verify"]:
+                self.assertNotIn("mount", Path(command[-1]).parts)
+                if invalid_signature:
+                    status, error = 1, "a sealed resource is missing or invalid"
+            return subprocess.CompletedProcess(command, status, output, error)
+        return command_result
+
+    def test_inspect_validates_the_copied_bundle_without_resigning(self):
+        with mock.patch.object(update_ego_lite.sys, "platform", "darwin"), \
+             mock.patch.object(update_ego_lite, "run",
+                               side_effect=self.application_commands()) as run:
+            self.assertEqual(
+                update_ego_lite.inspect_application(Path("installer.dmg")),
+                ("0.5.1.13", "5.1.13"),
+            )
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertTrue(any(cmd[:2] == ["/usr/bin/ditto", "--norsrc"] for cmd in commands))
+        self.assertFalse(any("--sign" in cmd for cmd in commands))
+        self.assertEqual(commands[-1][:2], ["/usr/bin/hdiutil", "detach"])
+
+    def test_inspect_still_rejects_invalid_signatures_and_detaches(self):
+        with mock.patch.object(update_ego_lite.sys, "platform", "darwin"), \
+             mock.patch.object(update_ego_lite, "run", side_effect=
+                               self.application_commands(invalid_signature=True)) as run:
+            with self.assertRaisesRegex(update_ego_lite.UpdateError, "signature verification failed"):
+                update_ego_lite.inspect_application(Path("installer.dmg"))
+        self.assertEqual(run.call_args.args[0][:2], ["/usr/bin/hdiutil", "detach"])
+
+    def test_inspect_rejects_failed_copy_and_detaches(self):
+        with mock.patch.object(update_ego_lite.sys, "platform", "darwin"), \
+             mock.patch.object(update_ego_lite, "run", side_effect=
+                               self.application_commands(copy_failure=True)) as run:
+            with self.assertRaisesRegex(update_ego_lite.UpdateError, "copy application"):
+                update_ego_lite.inspect_application(Path("installer.dmg"))
+        self.assertEqual(run.call_args.args[0][:2], ["/usr/bin/hdiutil", "detach"])
 
 
 if __name__ == "__main__":

@@ -36,6 +36,14 @@ jobs:
       - name: Update ego lite
         run: nix run --no-update-lock-file .#update-ego-lite
 
+      - name: Validate updated ego lite package before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- packages/ego-lite-source.json; then
+            nix run --no-update-lock-file .#ego-lite-package-check
+          fi
+
       - name: Update FloGravity
         run: nix run --no-update-lock-file .#update-flogravity
 
