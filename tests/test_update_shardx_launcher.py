@@ -1,3 +1,5 @@
+from contextlib import redirect_stderr
+from datetime import datetime, timedelta, timezone
 import io
 import json
 from pathlib import Path
@@ -71,6 +73,107 @@ class UpdateShardXLauncherTests(unittest.TestCase):
 
         with self.assertRaisesRegex(update_shardx_launcher.UpdateError, "exactly one"):
             update_shardx_launcher.release_metadata(release)
+
+    def test_missing_new_asset_during_upload_keeps_source_unchanged(self):
+        # The September 12 failure happened before v2.0.2's assets were
+        # uploaded at 13:28 UTC, after the release appeared at 10:47 UTC.
+        release = self.release(
+            version="2.0.2", assets=[], published_at="2026-09-12T10:47:42Z"
+        )
+        now = datetime(2026, 9, 12, 11, 13, 35, tzinfo=timezone.utc)
+        for check in (False, True):
+            with self.subTest(check=check), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "source.json"
+                self.write_source(source, version="2.0.1", digest="aa" * 32)
+                before = source.read_bytes()
+                warning = io.StringIO()
+                with patch.object(
+                    update_shardx_launcher, "github_release", return_value=release
+                ), patch.object(
+                    update_shardx_launcher, "datetime", wraps=datetime
+                ) as clock, patch.object(
+                    update_shardx_launcher, "download_artifact"
+                ) as download, redirect_stderr(warning):
+                    clock.now.return_value = now
+                    self.assertFalse(update_shardx_launcher.update(source, check=check))
+
+                self.assertEqual(source.read_bytes(), before)
+                self.assertIn("keeping 2.0.1 until the next updater run", warning.getvalue())
+                download.assert_not_called()
+
+    def test_missing_asset_outside_upload_window_still_fails(self):
+        now = datetime(2026, 9, 12, 17, tzinfo=timezone.utc)
+        timestamps = [
+            None,
+            "invalid",
+            "2026-09-12T17:00:01Z",  # Future timestamps cannot extend the window.
+            (now - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2026-09-11T10:47:42Z",
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            self.write_source(source, version="2.0.1", digest="aa" * 32)
+            before = source.read_bytes()
+            for published_at in timestamps:
+                with self.subTest(published_at=published_at), patch.object(
+                    update_shardx_launcher,
+                    "github_release",
+                    return_value=self.release(
+                        version="2.0.2", assets=[], published_at=published_at
+                    ),
+                ), patch.object(
+                    update_shardx_launcher, "datetime", wraps=datetime
+                ) as clock, patch.object(
+                    update_shardx_launcher, "download_artifact"
+                ) as download:
+                    clock.now.return_value = now
+                    with self.assertRaisesRegex(
+                        update_shardx_launcher.UpdateError, "found 0"
+                    ):
+                        update_shardx_launcher.update(source)
+                    self.assertEqual(source.read_bytes(), before)
+                    download.assert_not_called()
+
+    def test_missing_current_or_older_asset_is_not_deferred(self):
+        now = datetime(2026, 9, 12, 11, tzinfo=timezone.utc)
+        for version in ("2.0.1", "2.0.2"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "source.json"
+                self.write_source(source, version="2.0.2", digest="aa" * 32)
+                with patch.object(
+                    update_shardx_launcher,
+                    "github_release",
+                    return_value=self.release(
+                        version=version, assets=[], published_at="2026-09-12T10:47:42Z"
+                    ),
+                ), patch.object(
+                    update_shardx_launcher, "datetime", wraps=datetime
+                ) as clock:
+                    clock.now.return_value = now
+                    with self.assertRaises(update_shardx_launcher.MissingReleaseAsset):
+                        update_shardx_launcher.update(source)
+
+    def test_uploaded_new_asset_is_validated_and_adopted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            self.write_source(source, version="2.0.1", digest="aa" * 32)
+            with patch.object(
+                update_shardx_launcher,
+                "github_release",
+                return_value=self.release(
+                    version="2.0.2", published_at="2026-09-12T10:47:42Z"
+                ),
+            ), patch.object(
+                update_shardx_launcher, "download_artifact", return_value="ab" * 32
+            ) as download, patch.object(
+                update_shardx_launcher, "inspect_application"
+            ) as inspect:
+                self.assertTrue(update_shardx_launcher.update(source))
+
+            self.assertEqual(json.loads(source.read_text())["version"], "2.0.2")
+            download.assert_called_once()
+            inspect.assert_called_once()
+            self.assertEqual(inspect.call_args.args[1], "2.0.2")
 
     def test_release_metadata_rejects_unexpected_digest(self):
         release = self.release()

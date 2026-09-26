@@ -43,32 +43,6 @@
           'source=Notarized Developer ID'
         test -x "${self.packages.aarch64-darwin.ego-lite}/bin/ego-browser"
       '';
-      flogravityPackageCheck = aarch64DarwinPkgs.writeShellScript "flogravity-package-check" ''
-        set -euo pipefail
-        export LC_ALL=C
-
-        application="${self.packages.aarch64-darwin.flogravity}/Applications/浮引.app"
-        signature_details="$(/usr/bin/codesign -d --verbose=4 "$application" 2>&1)"
-
-        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
-          'Authority=Developer ID Application: JUN LIU (3MFNWTLLFG)'
-        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
-          'TeamIdentifier=3MFNWTLLFG'
-        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Eq \
-          '^CodeDirectory .*flags=.*runtime'
-        if printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
-          'Signature=adhoc'; then
-          echo 'FloGravity unexpectedly has an ad-hoc signature' >&2
-          exit 1
-        fi
-
-        /usr/bin/codesign --verify --deep --strict --verbose=4 "$application"
-        gatekeeper="$(
-          /usr/sbin/spctl --assess --type execute --verbose=4 "$application" 2>&1
-        )"
-        printf '%s\n' "$gatekeeper" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
-          'source=Notarized Developer ID'
-      '';
       neomacsPackageCheck = aarch64DarwinPkgs.writeShellScript "neomacs-package-check" ''
         set -euo pipefail
         export LC_ALL=C
@@ -174,9 +148,6 @@
             update-ego-lite =
               makeUpdaterApp "update-ego-lite" ./scripts/update_ego_lite.py
                 "packages/ego-lite-source.json";
-            update-flogravity =
-              makeUpdaterApp "update-flogravity" ./scripts/update_flogravity.py
-                "packages/flogravity-source.json";
             update-shardx-launcher =
               makeUpdaterApp "update-shardx-launcher" ./scripts/update_shardx_launcher.py
                 "packages/shardx-launcher-source.json";
@@ -185,9 +156,6 @@
       maintainer = forMaintainerSystems maintainerFor;
       egoLiteOverlay = final: _prev: {
         ego-lite = final.callPackage ./packages/ego-lite.nix { };
-      };
-      flogravityOverlay = final: _prev: {
-        flogravity = final.callPackage ./packages/flogravity.nix { };
       };
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
@@ -208,7 +176,6 @@
     {
       packages.aarch64-darwin = {
         ego-lite = aarch64DarwinPkgs.callPackage ./packages/ego-lite.nix { };
-        flogravity = aarch64DarwinPkgs.callPackage ./packages/flogravity.nix { };
         shardx-launcher = aarch64DarwinPkgs.callPackage ./packages/shardx-launcher.nix { };
         neomacs = neomacsPackage;
       };
@@ -216,8 +183,6 @@
       checks.aarch64-darwin = {
         ego-lite-package = self.packages.aarch64-darwin.ego-lite;
         ego-lite-overlay = (aarch64DarwinPkgs.extend egoLiteOverlay).ego-lite;
-        flogravity-package = self.packages.aarch64-darwin.flogravity;
-        flogravity-overlay = (aarch64DarwinPkgs.extend flogravityOverlay).flogravity;
         neomacs-package = self.packages.aarch64-darwin.neomacs;
         neomacs-overlay = (aarch64DarwinPkgs.extend neomacsOverlay).neomacs;
         neomacs-launcher = aarch64DarwinPkgs.callPackage ./tests/neomacs-launcher.nix {
@@ -241,10 +206,6 @@
             type = "app";
             program = "${egoLitePackageCheck}";
           };
-          flogravity-package-check = {
-            type = "app";
-            program = "${flogravityPackageCheck}";
-          };
           neomacs-package-check = {
             type = "app";
             program = "${neomacsPackageCheck}";
@@ -260,7 +221,6 @@
 
       overlays = {
         ego-lite = egoLiteOverlay;
-        flogravity = flogravityOverlay;
         shardx-launcher = shardxLauncherOverlay;
         neomacs = neomacsOverlay;
       };
@@ -269,12 +229,6 @@
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ egoLiteOverlay ];
-        };
-
-      darwinModules.flogravity =
-        { lib, ... }:
-        {
-          nixpkgs.overlays = lib.mkAfter [ flogravityOverlay ];
         };
 
       darwinModules.shardx-launcher =

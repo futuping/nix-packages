@@ -36,35 +36,6 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
-## FloGravity
-
-`flogravity` packages the official universal macOS DMG for FloGravity (浮引).
-The HFS image's Unicode bundle and executable names are truncated by `undmg`,
-so the derivation identifies the sole application structurally and restores the
-names declared by its `Info.plist`. It checks the pinned bundle identity,
-architectures, Developer ID authority, Team ID, and hardened-runtime flag, then
-strictly verifies the normalized bundle without re-signing it. Restoring the
-two names also restores the validity of the original notarized Developer ID
-seal, so the installed application retains its upstream trust and restricted
-entitlements. The application is closed source and offers a separately
-licensed Pro edition, so the package is marked unfree.
-
-Import its focused overlay module:
-
-```nix
-modules = [
-  inputs.nix-packages.darwinModules.flogravity
-];
-```
-
-Then select the package by its bare name:
-
-```nix
-environment.systemPackages = with pkgs; [
-  flogravity
-];
-```
-
 ## ShardX Launcher
 
 `shardx-launcher` packages the official Apple Silicon ShardX Launcher DMG.
@@ -268,18 +239,15 @@ locks require rebuilding.
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
-daily. FloGravity is discovered from its official stable Sparkle appcast. For a
-new candidate release, the updater accepts only immutable versioned assets from
-the reviewed download host, verifies its Sparkle Ed25519 signature, computes
-the complete SHA-256, and checks the bundle identity, universal architectures,
-and embedded signing identity. Every accepted version must have a valid,
-notarized Developer ID signature; there are no version-specific exceptions.
-Before publishing a changed FloGravity source, the native updater workflow also
-builds the normalized Nix output and reassesses its preserved signature with
-Gatekeeper before committing the source metadata.
+daily.
 ShardX Launcher requires one exact Apple Silicon release asset, downloads it
 from an allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset
-digest when available.
+digest when available. Upstream sometimes publishes a release before uploading
+its assets. If a newer stable release is less than six hours old and its Apple
+Silicon asset is absent, the updater logs a warning, preserves the existing
+source, and tries again on the next daily run. Missing assets after that window,
+invalid publication timestamps, removed current assets, duplicate assets, and
+invalid URLs or digests still fail validation.
 
 ego lite follows the public website's canonical Apple Silicon CDN URL instead
 of versioned release assets. Referral-channel URLs can retain older installers
@@ -340,7 +308,7 @@ committing its lock, and fail without publishing the lock if upload fails.
 CI also runs the complete offline suite on Python 3.9, the declared minimum
 compatible version, and Python 3.14, the current maintainer version. The
 scheduled workflow uses only the locked Nix entry points. Pull requests and
-pushes also build FloGravity and Neomacs on Apple silicon macOS runners, covering
+pushes also build ego lite and Neomacs on Apple silicon macOS runners, covering
 the final DMG bundle and the upstream source package rather than evaluation
 alone.
 
@@ -348,7 +316,6 @@ On Apple silicon macOS, run an updater manually from the repository root with:
 
 ```sh
 nix run --no-update-lock-file .#update-ego-lite
-nix run --no-update-lock-file .#update-flogravity
 nix run --no-update-lock-file .#update-shardx-launcher
 ```
 

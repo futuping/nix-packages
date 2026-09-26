@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -33,6 +34,7 @@ ALLOWED_DOWNLOAD_HOSTS = {
     "release-assets.githubusercontent.com",
 }
 MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+RELEASE_UPLOAD_GRACE = timedelta(hours=6)
 APP_NAME = "ShardX Launcher.app"
 BUNDLE_ID = "com.shardx.launcher"
 EXECUTABLE_NAME = "shardx-launcher"
@@ -45,6 +47,24 @@ DEFAULT_SOURCE = (
 
 class UpdateError(RuntimeError):
     pass
+
+
+class MissingReleaseAsset(UpdateError):
+    pass
+
+
+def release_upload_pending(release: dict) -> bool:
+    published_at = release.get("published_at")
+    if not isinstance(published_at, str):
+        return False
+    try:
+        published = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return False
+    age = datetime.now(timezone.utc) - published
+    return timedelta(0) <= age < RELEASE_UPLOAD_GRACE
 
 
 def version_key(version: str) -> tuple[int, int, int]:
@@ -89,6 +109,10 @@ def release_metadata(release: dict) -> tuple[str, str, str | None]:
         for asset in release.get("assets", [])
         if asset.get("name") == expected_name
     ]
+    if not assets:
+        raise MissingReleaseAsset(
+            f"expected exactly one {expected_name!r} asset, found 0"
+        )
     if len(assets) != 1:
         raise UpdateError(
             f"expected exactly one {expected_name!r} asset, found {len(assets)}"
@@ -281,8 +305,24 @@ def write_source(path: Path, source: dict[str, str]) -> None:
 
 def update(path: Path, *, check: bool = False) -> bool:
     current = read_source(path)
-    version, url, api_digest = release_metadata(github_release())
     current_key = version_key(current["version"])
+    release = github_release()
+    try:
+        version, url, api_digest = release_metadata(release)
+    except MissingReleaseAsset:
+        # Upstream publishes the release before uploading its platform assets.
+        # Only defer a newer release briefly; never ignore removed current
+        # assets, malformed metadata, or a permanently incomplete release.
+        version = release["tag_name"].removeprefix("v")
+        if version_key(version) > current_key and release_upload_pending(release):
+            print(
+                f"warning: ShardX Launcher {version} was published less than "
+                "6 hours ago and its Apple Silicon asset is not available yet; "
+                f"keeping {current['version']} until the next updater run",
+                file=sys.stderr,
+            )
+            return False
+        raise
     latest_key = version_key(version)
 
     if latest_key < current_key:
