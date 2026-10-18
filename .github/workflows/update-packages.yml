@@ -49,6 +49,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: nix run --no-update-lock-file .#update-shardx-launcher
 
+      - name: Update WordCraft CLI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: nix run --no-update-lock-file .#update-wordcraft-cli
+
+      - name: Validate updated WordCraft CLI before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- packages/wordcraft-cli-source.json; then
+            nix run --no-update-lock-file .#wordcraft-cli-package-check
+          fi
+
       - name: Commit update or keep scheduled workflow active
         env:
           GH_PUSH_TOKEN: ${{ github.token }}
@@ -68,6 +81,7 @@ jobs:
           sources=(
             packages/ego-lite-source.json
             packages/shardx-launcher-source.json
+            packages/wordcraft-cli-source.json
           )
 
           if ! git diff --quiet -- "${sources[@]}"; then

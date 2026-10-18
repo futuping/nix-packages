@@ -43,6 +43,25 @@
           'source=Notarized Developer ID'
         test -x "${self.packages.aarch64-darwin.ego-lite}/bin/ego-browser"
       '';
+      wordcraftCliPackageCheck = aarch64DarwinPkgs.writeShellScript "wordcraft-cli-package-check" ''
+        set -euo pipefail
+        export LC_ALL=C
+        export PYTHONDONTWRITEBYTECODE=1
+        export PYTHONNOUSERSITE=1
+
+        executable="${self.packages.aarch64-darwin.wordcraft-cli}/bin/wordcraft-cli"
+        /usr/bin/codesign --verify --strict --all-architectures "$executable"
+        signature_details="$(/usr/bin/codesign -d --verbose=4 "$executable" 2>&1)"
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'Authority=Developer ID Application: Learning Machines LLC (DJ6XS33FX8)'
+        printf '%s\n' "$signature_details" | ${aarch64DarwinPkgs.gnugrep}/bin/grep -Fqx \
+          'TeamIdentifier=DJ6XS33FX8'
+        architectures="$(/usr/bin/lipo -archs "$executable")"
+        [[ " $architectures " == *" arm64 "* ]]
+        [[ " $architectures " == *" x86_64 "* ]]
+        "$executable" --version
+        exec ${aarch64DarwinPkgs.python314}/bin/python3 ${./tests/check_wordcraft_cli.py} "$executable"
+      '';
       neomacsPackageCheck = aarch64DarwinPkgs.writeShellScript "neomacs-package-check" ''
         set -euo pipefail
         export LC_ALL=C
@@ -151,6 +170,9 @@
             update-shardx-launcher =
               makeUpdaterApp "update-shardx-launcher" ./scripts/update_shardx_launcher.py
                 "packages/shardx-launcher-source.json";
+            update-wordcraft-cli =
+              makeUpdaterApp "update-wordcraft-cli" ./scripts/update_wordcraft_cli.py
+                "packages/wordcraft-cli-source.json";
           };
         };
       maintainer = forMaintainerSystems maintainerFor;
@@ -159,6 +181,9 @@
       };
       shardxLauncherOverlay = final: _prev: {
         shardx-launcher = final.callPackage ./packages/shardx-launcher.nix { };
+      };
+      wordcraftCliOverlay = final: _prev: {
+        wordcraft-cli = final.callPackage ./packages/wordcraft-cli.nix { };
       };
       # Keep the launcher and core on upstream's lock. A consumer's nixpkgs
       # follows edge or overlays must not change the output published by CI.
@@ -177,12 +202,30 @@
       packages.aarch64-darwin = {
         ego-lite = aarch64DarwinPkgs.callPackage ./packages/ego-lite.nix { };
         shardx-launcher = aarch64DarwinPkgs.callPackage ./packages/shardx-launcher.nix { };
+        wordcraft-cli = aarch64DarwinPkgs.callPackage ./packages/wordcraft-cli.nix { };
         neomacs = neomacsPackage;
       };
 
       checks.aarch64-darwin = {
         ego-lite-package = self.packages.aarch64-darwin.ego-lite;
         ego-lite-overlay = (aarch64DarwinPkgs.extend egoLiteOverlay).ego-lite;
+        wordcraft-cli-package = self.packages.aarch64-darwin.wordcraft-cli;
+        wordcraft-cli-overlay = (aarch64DarwinPkgs.extend wordcraftCliOverlay).wordcraft-cli;
+        wordcraft-cli-module =
+          let
+            evaluated = nixpkgs.lib.evalModules {
+              modules = [
+                {
+                  options.nixpkgs.overlays = nixpkgs.lib.mkOption {
+                    type = with nixpkgs.lib.types; listOf raw;
+                    default = [ ];
+                  };
+                }
+                self.darwinModules.wordcraft-cli
+              ];
+            };
+          in
+          (aarch64DarwinPkgs.appendOverlays evaluated.config.nixpkgs.overlays).wordcraft-cli;
         neomacs-package = self.packages.aarch64-darwin.neomacs;
         neomacs-overlay = (aarch64DarwinPkgs.extend neomacsOverlay).neomacs;
         neomacs-launcher = aarch64DarwinPkgs.callPackage ./tests/neomacs-launcher.nix {
@@ -206,6 +249,10 @@
             type = "app";
             program = "${egoLitePackageCheck}";
           };
+          wordcraft-cli-package-check = {
+            type = "app";
+            program = "${wordcraftCliPackageCheck}";
+          };
           neomacs-package-check = {
             type = "app";
             program = "${neomacsPackageCheck}";
@@ -222,6 +269,7 @@
       overlays = {
         ego-lite = egoLiteOverlay;
         shardx-launcher = shardxLauncherOverlay;
+        wordcraft-cli = wordcraftCliOverlay;
         neomacs = neomacsOverlay;
       };
 
@@ -235,6 +283,12 @@
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ shardxLauncherOverlay ];
+        };
+
+      darwinModules.wordcraft-cli =
+        { lib, ... }:
+        {
+          nixpkgs.overlays = lib.mkAfter [ wordcraftCliOverlay ];
         };
 
       darwinModules.neomacs =

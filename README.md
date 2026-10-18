@@ -60,6 +60,45 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
+## WordCraft CLI
+
+`wordcraft-cli` packages the official macOS universal command-line release,
+separately from the WordCraft desktop application's Homebrew Cask. It provides
+document conversion, inspection, scripted editing, and a headless MCP server.
+The package preserves the upstream executable and its code signature by
+disabling fixups.
+
+Import `inputs.nix-packages.darwinModules.wordcraft-cli`, then select the bare
+`wordcraft-cli` attribute in `environment.systemPackages = with pkgs; [ ... ];`.
+The package is currently exported for `aarch64-darwin`.
+
+For a headless Codex connection after installation:
+
+```sh
+codex mcp add wordcraft -- wordcraft-cli mcp --author Codex
+```
+
+The author name labels edits; tracking must be enabled explicitly per document
+with `review.trackChanges` and `{"value": true}`. The server runs over stdio
+without opening the desktop app. Optional `--automation-read-root` and
+`--automation-write-root` arguments restrict it to existing document folders.
+
+From a writable checkout:
+
+```sh
+nix run --no-update-lock-file .#update-wordcraft-cli -- --check
+nix run --no-update-lock-file .#wordcraft-cli-package-check
+```
+
+The updater accepts stable release tags, matches the exact universal CLI ZIP,
+checks bounded downloads from reviewed HTTPS hosts and GitHub asset digests,
+and rejects downgrades or same-version content changes. The package check
+verifies the preserved signature and architectures, then exercises MCP
+initialization, document editing, tracked-change authorship, DOCX saving, and
+page rendering in an isolated temporary directory. CI runs this native check
+on Apple silicon. The existing daily updater also checks the CLI; consumers
+still update their own lock and activate their system explicitly.
+
 ## Neomacs
 
 `neomacs` forwards the upstream Apple Silicon Nix package from `main`, retaining
