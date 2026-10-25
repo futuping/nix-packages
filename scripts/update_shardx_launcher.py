@@ -20,11 +20,7 @@ from urllib.request import Request, urlopen
 
 
 API_URL = "https://api.github.com/repos/ProxyShard/ShardBrowser/releases/latest"
-ASSET_NAME = "ShardX.Launcher_{version}_aarch64.dmg"
-DOWNLOAD_URL = (
-    "https://github.com/ProxyShard/ShardBrowser/releases/download/"
-    "v{version}/" + ASSET_NAME
-)
+RENAME_VERSION = (2, 1, 0)
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 SRI_PATTERN = re.compile(r"^sha256-[A-Za-z0-9+/]{43}=$")
 HEX_DIGEST_PATTERN = re.compile(r"^sha256:([0-9a-f]{64})$")
@@ -35,9 +31,7 @@ ALLOWED_DOWNLOAD_HOSTS = {
 }
 MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 RELEASE_UPLOAD_GRACE = timedelta(hours=6)
-APP_NAME = "ShardX Launcher.app"
 BUNDLE_ID = "com.shardx.launcher"
-EXECUTABLE_NAME = "shardx-launcher"
 DEFAULT_SOURCE = (
     Path(__file__).resolve().parents[1]
     / "packages"
@@ -73,6 +67,25 @@ def version_key(version: str) -> tuple[int, int, int]:
     return tuple(int(part) for part in version.split("."))
 
 
+def asset_name(version: str) -> str:
+    # Upstream renamed the product in v2.1.0; historical pins retain their URLs.
+    product = "ShardBrowser" if version_key(version) >= RENAME_VERSION else "ShardX"
+    return f"{product}.Launcher_{version}_aarch64.dmg"
+
+
+def download_url(version: str) -> str:
+    return (
+        "https://github.com/ProxyShard/ShardBrowser/releases/download/"
+        f"v{version}/{asset_name(version)}"
+    )
+
+
+def application_names(version: str) -> tuple[str, str]:
+    if version_key(version) >= RENAME_VERSION:
+        return "ShardBrowser Launcher.app", "shardbrowser-launcher"
+    return "ShardX Launcher.app", "shardx-launcher"
+
+
 def validate_response_url(
     url: str, allowed_hosts: set[str], description: str
 ) -> None:
@@ -103,13 +116,23 @@ def release_metadata(release: dict) -> tuple[str, str, str | None]:
     version = tag.removeprefix("v")
     version_key(version)
 
-    expected_name = ASSET_NAME.format(version=version)
+    expected_name = asset_name(version)
     assets = [
         asset
         for asset in release.get("assets", [])
         if asset.get("name") == expected_name
     ]
     if not assets:
+        # An asset under the other product name is a metadata mismatch, not
+        # an upload still in progress. Keep the grace period for absent assets.
+        other_product = (
+            "ShardX" if version_key(version) >= RENAME_VERSION else "ShardBrowser"
+        )
+        other_name = f"{other_product}.Launcher_{version}_aarch64.dmg"
+        if any(asset.get("name") == other_name for asset in release.get("assets", [])):
+            raise UpdateError(
+                f"unexpected launcher asset name for version {version}: {other_name!r}"
+            )
         raise MissingReleaseAsset(
             f"expected exactly one {expected_name!r} asset, found 0"
         )
@@ -120,7 +143,7 @@ def release_metadata(release: dict) -> tuple[str, str, str | None]:
 
     asset = assets[0]
     url = asset.get("browser_download_url")
-    expected_url = DOWNLOAD_URL.format(version=version)
+    expected_url = download_url(version)
     if url != expected_url:
         raise UpdateError(f"unexpected asset URL: {url!r}")
 
@@ -204,10 +227,44 @@ def plist_string(plist: dict, key: str) -> str:
     return value
 
 
+def inspect_bundle(application: Path, expected_version: str) -> None:
+    expected_app, expected_executable = application_names(expected_version)
+    if application.name != expected_app:
+        raise UpdateError(f"unexpected application bundle: {application.name!r}")
+
+    try:
+        info = plistlib.loads(
+            (application / "Contents" / "Info.plist").read_bytes()
+        )
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise UpdateError(
+            f"unable to read application Info.plist: {error}"
+        ) from error
+
+    identifier = plist_string(info, "CFBundleIdentifier")
+    if identifier != BUNDLE_ID:
+        raise UpdateError(f"unexpected bundle ID: {identifier!r}")
+    version = plist_string(info, "CFBundleShortVersionString")
+    if version != expected_version:
+        raise UpdateError(f"unexpected bundle version: {version!r}")
+    executable_name = plist_string(info, "CFBundleExecutable")
+    if executable_name != expected_executable:
+        raise UpdateError(f"unexpected bundle executable: {executable_name!r}")
+
+    executable = application / "Contents" / "MacOS" / expected_executable
+    architectures = command_output(
+        ["/usr/bin/lipo", "-archs", str(executable)],
+        "inspect application architecture",
+    ).split()
+    if architectures != ["arm64"]:
+        raise UpdateError(f"unexpected application architectures: {architectures}")
+
+
 def inspect_application(dmg_path: Path, expected_version: str) -> None:
     if sys.platform != "darwin":
         return
 
+    expected_app, _ = application_names(expected_version)
     with tempfile.TemporaryDirectory(prefix="shardx-launcher-mount-") as temporary:
         mount_path = Path(temporary) / "mount"
         mount_path.mkdir()
@@ -227,37 +284,10 @@ def inspect_application(dmg_path: Path, expected_version: str) -> None:
 
         try:
             applications = list(mount_path.glob("*.app"))
-            if len(applications) != 1 or applications[0].name != APP_NAME:
+            if len(applications) != 1 or applications[0].name != expected_app:
                 names = sorted(application.name for application in applications)
                 raise UpdateError(f"unexpected application bundles in DMG: {names}")
-            application = applications[0]
-
-            try:
-                info = plistlib.loads(
-                    (application / "Contents" / "Info.plist").read_bytes()
-                )
-            except (OSError, plistlib.InvalidFileException) as error:
-                raise UpdateError(
-                    f"unable to read application Info.plist: {error}"
-                ) from error
-
-            identifier = plist_string(info, "CFBundleIdentifier")
-            if identifier != BUNDLE_ID:
-                raise UpdateError(f"unexpected bundle ID: {identifier!r}")
-            version = plist_string(info, "CFBundleShortVersionString")
-            if version != expected_version:
-                raise UpdateError(f"unexpected bundle version: {version!r}")
-            executable_name = plist_string(info, "CFBundleExecutable")
-            if executable_name != EXECUTABLE_NAME:
-                raise UpdateError(f"unexpected bundle executable: {executable_name!r}")
-
-            executable = application / "Contents" / "MacOS" / EXECUTABLE_NAME
-            architectures = command_output(
-                ["/usr/bin/lipo", "-archs", str(executable)],
-                "inspect application architecture",
-            ).split()
-            if architectures != ["arm64"]:
-                raise UpdateError(f"unexpected application architectures: {architectures}")
+            inspect_bundle(applications[0], expected_version)
         finally:
             detach = run(["/usr/bin/hdiutil", "detach", str(mount_path)])
             if detach.returncode != 0 and sys.exc_info()[0] is None:
@@ -279,7 +309,7 @@ def read_source(path: Path) -> dict[str, str]:
     if not all(isinstance(value, str) for value in source.values()):
         raise UpdateError("every source value must be a string")
     version_key(source["version"])
-    if source["url"] != DOWNLOAD_URL.format(version=source["version"]):
+    if source["url"] != download_url(source["version"]):
         raise UpdateError(f"unexpected configured URL: {source['url']!r}")
     if not SRI_PATTERN.fullmatch(source["hash"]):
         raise UpdateError(f"invalid configured hash: {source['hash']!r}")
@@ -331,7 +361,7 @@ def update(path: Path, *, check: bool = False) -> bool:
         )
 
     with tempfile.TemporaryDirectory(prefix="shardx-launcher-update-") as temporary:
-        dmg_path = Path(temporary) / ASSET_NAME.format(version=version)
+        dmg_path = Path(temporary) / asset_name(version)
         downloaded_digest = download_artifact(url, dmg_path)
         if api_digest is not None and downloaded_digest != api_digest:
             raise UpdateError(

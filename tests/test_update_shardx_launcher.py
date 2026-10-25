@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 import io
 import json
 from pathlib import Path
+import plistlib
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,7 +15,12 @@ from scripts import update_shardx_launcher
 class UpdateShardXLauncherTests(unittest.TestCase):
     def release(self, **overrides):
         version = overrides.pop("version", "0.1.10")
-        asset_name = f"ShardX.Launcher_{version}_aarch64.dmg"
+        product = (
+            "ShardBrowser"
+            if tuple(map(int, version.split("."))) >= (2, 1, 0)
+            else "ShardX"
+        )
+        asset_name = f"{product}.Launcher_{version}_aarch64.dmg"
         release = {
             "tag_name": f"v{version}",
             "draft": False,
@@ -37,9 +44,7 @@ class UpdateShardXLauncherTests(unittest.TestCase):
             json.dumps(
                 {
                     "version": version,
-                    "url": update_shardx_launcher.DOWNLOAD_URL.format(
-                        version=version
-                    ),
+                    "url": update_shardx_launcher.download_url(version),
                     "hash": update_shardx_launcher.sri_sha256(digest),
                 }
             )
@@ -55,6 +60,211 @@ class UpdateShardXLauncherTests(unittest.TestCase):
             "v0.1.10/ShardX.Launcher_0.1.10_aarch64.dmg",
         )
         self.assertEqual(digest, "ab" * 32)
+
+    def test_product_rename_boundary(self):
+        for version, product, executable in (
+            ("2.0.3", "ShardX", "shardx-launcher"),
+            ("2.0.99", "ShardX", "shardx-launcher"),
+            ("2.1.0", "ShardBrowser", "shardbrowser-launcher"),
+            ("2.1.1", "ShardBrowser", "shardbrowser-launcher"),
+            ("2.10.0", "ShardBrowser", "shardbrowser-launcher"),
+        ):
+            with self.subTest(version=version):
+                name = f"{product}.Launcher_{version}_aarch64.dmg"
+                url = (
+                    "https://github.com/ProxyShard/ShardBrowser/releases/download/"
+                    f"v{version}/{name}"
+                )
+                self.assertEqual(update_shardx_launcher.asset_name(version), name)
+                self.assertEqual(update_shardx_launcher.download_url(version), url)
+                self.assertEqual(
+                    update_shardx_launcher.application_names(version),
+                    (f"{product} Launcher.app", executable),
+                )
+                self.assertEqual(
+                    update_shardx_launcher.release_metadata(self.release(version=version)),
+                    (version, url, "ab" * 32),
+                )
+
+    def test_source_uses_exact_version_bound_url(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            for version in ("2.0.3", "2.1.0", "2.1.1"):
+                with self.subTest(version=version):
+                    self.write_source(source, version=version, digest="ab" * 32)
+                    current = update_shardx_launcher.read_source(source)
+                    wrong = "ShardX" if version != "2.0.3" else "ShardBrowser"
+                    current["url"] = (
+                        "https://github.com/ProxyShard/ShardBrowser/releases/download/"
+                        f"v{version}/{wrong}.Launcher_{version}_aarch64.dmg"
+                    )
+                    source.write_text(json.dumps(current))
+                    with self.assertRaisesRegex(
+                        update_shardx_launcher.UpdateError, "unexpected configured URL"
+                    ):
+                        update_shardx_launcher.read_source(source)
+
+    def test_legacy_name_after_rename_is_not_deferred_as_pending_upload(self):
+        release = self.release(
+            version="2.1.0", published_at="2026-10-22T10:36:05Z"
+        )
+        release["assets"][0]["name"] = "ShardX.Launcher_2.1.0_aarch64.dmg"
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            self.write_source(source, version="2.0.3", digest="aa" * 32)
+            before = source.read_bytes()
+            with patch.object(
+                update_shardx_launcher, "github_release", return_value=release
+            ), patch.object(
+                update_shardx_launcher, "datetime", wraps=datetime
+            ) as clock, patch.object(
+                update_shardx_launcher, "download_artifact"
+            ) as download:
+                clock.now.return_value = datetime(
+                    2026, 10, 22, 11, tzinfo=timezone.utc
+                )
+                with self.assertRaisesRegex(
+                    update_shardx_launcher.UpdateError, "unexpected launcher asset name"
+                ):
+                    update_shardx_launcher.update(source)
+            self.assertEqual(source.read_bytes(), before)
+            download.assert_not_called()
+
+    def test_renamed_asset_requires_renamed_url(self):
+        release = self.release(version="2.1.1")
+        release["assets"][0]["browser_download_url"] = (
+            "https://github.com/ProxyShard/ShardBrowser/releases/download/"
+            "v2.1.1/ShardX.Launcher_2.1.1_aarch64.dmg"
+        )
+        with self.assertRaisesRegex(
+            update_shardx_launcher.UpdateError, "unexpected asset URL"
+        ):
+            update_shardx_launcher.release_metadata(release)
+
+    def test_update_adopts_renamed_release_from_legacy_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            self.write_source(source, version="2.0.3", digest="aa" * 32)
+            with patch.object(
+                update_shardx_launcher,
+                "github_release",
+                return_value=self.release(version="2.1.1"),
+            ), patch.object(
+                update_shardx_launcher, "download_artifact", return_value="ab" * 32
+            ) as download, patch.object(
+                update_shardx_launcher, "inspect_application"
+            ) as inspect:
+                self.assertTrue(update_shardx_launcher.update(source))
+            self.assertEqual(
+                json.loads(source.read_text()),
+                {
+                    "version": "2.1.1",
+                    "url": "https://github.com/ProxyShard/ShardBrowser/releases/download/"
+                    "v2.1.1/ShardBrowser.Launcher_2.1.1_aarch64.dmg",
+                    "hash": update_shardx_launcher.sri_sha256("ab" * 32),
+                },
+            )
+            self.assertEqual(
+                download.call_args.args[1].name,
+                "ShardBrowser.Launcher_2.1.1_aarch64.dmg",
+            )
+            self.assertEqual(inspect.call_args.args[1], "2.1.1")
+
+    def inspect_fixture(
+        self,
+        version,
+        *,
+        bundle_name=None,
+        plist_overrides=None,
+        architectures="arm64",
+        extra_app=False,
+        expected_error=None,
+    ):
+        renamed = tuple(map(int, version.split("."))) >= (2, 1, 0)
+        app = "ShardBrowser Launcher.app" if renamed else "ShardX Launcher.app"
+        executable = "shardbrowser-launcher" if renamed else "shardx-launcher"
+        commands = []
+
+        def command(command):
+            commands.append(command)
+            output = ""
+            if command[:2] == ["/usr/bin/hdiutil", "attach"]:
+                mount = Path(command[-1])
+                application = mount / (bundle_name or app)
+                contents = application / "Contents"
+                contents.mkdir(parents=True)
+                info = {
+                    "CFBundleIdentifier": "com.shardx.launcher",
+                    "CFBundleShortVersionString": version,
+                    "CFBundleExecutable": executable,
+                }
+                info.update(plist_overrides or {})
+                (contents / "Info.plist").write_bytes(plistlib.dumps(info))
+                if extra_app:
+                    (mount / "Unexpected.app").mkdir()
+            elif command[:2] == ["/usr/bin/lipo", "-archs"]:
+                self.assertEqual(Path(command[-1]).name, executable)
+                output = architectures
+            else:
+                self.assertEqual(command[:2], ["/usr/bin/hdiutil", "detach"])
+            return subprocess.CompletedProcess(command, 0, output, "")
+
+        with patch.object(
+            update_shardx_launcher.sys, "platform", "darwin"
+        ), patch.object(update_shardx_launcher, "run", side_effect=command):
+            if expected_error is None:
+                update_shardx_launcher.inspect_application(Path("fixture.dmg"), version)
+            else:
+                with self.assertRaisesRegex(
+                    update_shardx_launcher.UpdateError, expected_error
+                ):
+                    update_shardx_launcher.inspect_application(Path("fixture.dmg"), version)
+
+        self.assertIn("-readonly", commands[0])
+        self.assertEqual(commands[-1][:2], ["/usr/bin/hdiutil", "detach"])
+        self.assertEqual(commands[-1][-1], commands[0][-1])
+        return commands
+
+    def test_inspect_application_accepts_legacy_and_renamed_bundle(self):
+        for version in ("2.0.3", "2.1.0", "2.1.1"):
+            with self.subTest(version=version):
+                commands = self.inspect_fixture(version)
+                self.assertEqual(len(commands), 3)
+
+    def test_inspect_application_rejects_unexpected_bundles_and_detaches(self):
+        for options in (
+            {"bundle_name": "ShardX Launcher.app"},
+            {"bundle_name": "Other.app"},
+            {"extra_app": True},
+        ):
+            with self.subTest(options=options):
+                commands = self.inspect_fixture(
+                    "2.1.1", expected_error="unexpected application bundles", **options
+                )
+                self.assertEqual(len(commands), 2)
+
+    def test_inspect_application_rejects_wrong_identity_and_detaches(self):
+        for overrides, message in (
+            ({"CFBundleIdentifier": "com.other.launcher"}, "unexpected bundle ID"),
+            ({"CFBundleShortVersionString": "2.0.3"}, "unexpected bundle version"),
+            ({"CFBundleExecutable": "shardx-launcher"}, "unexpected bundle executable"),
+            ({"CFBundleExecutable": "../../outside"}, "unexpected bundle executable"),
+        ):
+            with self.subTest(overrides=overrides):
+                commands = self.inspect_fixture(
+                    "2.1.1", plist_overrides=overrides, expected_error=message
+                )
+                self.assertEqual(len(commands), 2)
+
+    def test_inspect_application_rejects_wrong_architectures_and_detaches(self):
+        for architectures in ("x86_64", "arm64 x86_64", ""):
+            with self.subTest(architectures=architectures):
+                commands = self.inspect_fixture(
+                    "2.1.1",
+                    architectures=architectures,
+                    expected_error="unexpected application architectures",
+                )
+                self.assertEqual(len(commands), 3)
 
     def test_release_metadata_rejects_prerelease(self):
         with self.assertRaisesRegex(update_shardx_launcher.UpdateError, "prerelease"):
@@ -271,7 +481,7 @@ class UpdateShardXLauncherTests(unittest.TestCase):
                     update_shardx_launcher.UpdateError, "download response URL"
                 ):
                     update_shardx_launcher.download_artifact(
-                        update_shardx_launcher.DOWNLOAD_URL.format(version="0.1.10"),
+                        update_shardx_launcher.download_url("0.1.10"),
                         destination,
                     )
 
@@ -293,7 +503,7 @@ class UpdateShardXLauncherTests(unittest.TestCase):
                     update_shardx_launcher.UpdateError, "download response URL"
                 ):
                     update_shardx_launcher.download_artifact(
-                        update_shardx_launcher.DOWNLOAD_URL.format(version="0.1.10"),
+                        update_shardx_launcher.download_url("0.1.10"),
                         destination,
                     )
 

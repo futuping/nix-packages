@@ -43,6 +43,15 @@
           'source=Notarized Developer ID'
         test -x "${self.packages.aarch64-darwin.ego-lite}/bin/ego-browser"
       '';
+      shardxLauncherPackageCheck = aarch64DarwinPkgs.writeShellScript "shardx-launcher-package-check" ''
+        set -euo pipefail
+        export PYTHONDONTWRITEBYTECODE=1
+        export PYTHONNOUSERSITE=1
+        cd ${self}
+        exec ${aarch64DarwinPkgs.python314}/bin/python3 -m tests.check_shardx_launcher \
+          "${self.packages.aarch64-darwin.shardx-launcher}" \
+          "${self.packages.aarch64-darwin.shardx-launcher.version}"
+      '';
       wordcraftCliPackageCheck = aarch64DarwinPkgs.writeShellScript "wordcraft-cli-package-check" ''
         set -euo pipefail
         export LC_ALL=C
@@ -209,6 +218,8 @@
       checks.aarch64-darwin = {
         ego-lite-package = self.packages.aarch64-darwin.ego-lite;
         ego-lite-overlay = (aarch64DarwinPkgs.extend egoLiteOverlay).ego-lite;
+        shardx-launcher-package = self.packages.aarch64-darwin.shardx-launcher;
+        shardx-launcher-overlay = (aarch64DarwinPkgs.extend shardxLauncherOverlay).shardx-launcher;
         wordcraft-cli-package = self.packages.aarch64-darwin.wordcraft-cli;
         wordcraft-cli-overlay = (aarch64DarwinPkgs.extend wordcraftCliOverlay).wordcraft-cli;
         wordcraft-cli-module =
@@ -248,6 +259,10 @@
           ego-lite-package-check = {
             type = "app";
             program = "${egoLitePackageCheck}";
+          };
+          shardx-launcher-package-check = {
+            type = "app";
+            program = "${shardxLauncherPackageCheck}";
           };
           wordcraft-cli-package-check = {
             type = "app";

@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  shardx-launcher-package:
+    name: Check ShardX Launcher on Apple silicon
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Verify Apple silicon package runner
+        run: test "$(/usr/bin/uname -m)" = arm64
+
+      - name: Verify the installed bundle identity, version and architecture
+        run: nix run --no-update-lock-file .#shardx-launcher-package-check
+
   wordcraft-cli-package:
     name: Check WordCraft CLI and headless MCP on Apple silicon
     runs-on: macos-15
@@ -174,6 +192,7 @@ jobs:
           nix eval --raw .#devShells.aarch64-darwin.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.aarch64-darwin.maintainer-check.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.ego-lite-package-check.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.shardx-launcher-package-check.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.wordcraft-cli-package-check.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-ego-lite.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-shardx-launcher.program >/dev/null
@@ -195,6 +214,9 @@ jobs:
           nix eval --raw --no-update-lock-file .#packages.aarch64-darwin.ego-lite.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.ego-lite-package.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.ego-lite-overlay.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#packages.aarch64-darwin.shardx-launcher.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.shardx-launcher-package.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.shardx-launcher-overlay.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#packages.aarch64-darwin.wordcraft-cli.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.wordcraft-cli-package.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.wordcraft-cli-overlay.drvPath >/dev/null

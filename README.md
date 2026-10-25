@@ -38,11 +38,15 @@ environment.systemPackages = with pkgs; [
 
 ## ShardX Launcher
 
-`shardx-launcher` packages the official Apple Silicon ShardX Launcher DMG.
+`shardx-launcher` packages the official Apple Silicon launcher DMG. Upstream
+renamed ShardX Launcher to ShardBrowser Launcher in 2.1.0, including the DMG,
+app bundle, and executable names. The package and updater accept the exact
+names for each version and retain the public `shardx-launcher` attribute.
 The launcher is MIT licensed, but its first run downloads a separate,
 closed-source Chromium engine and fingerprint library from ProxyShard's CDN.
-The upstream launcher is not notarized or signed with an Apple Developer ID;
-the derivation leaves its bundle unchanged.
+Older ShardX releases did not carry an Apple Developer ID signature. The
+verified 2.1.1 release is Developer ID signed; the derivation preserves the
+upstream bundle and signature without re-signing.
 
 Import its focused overlay module:
 
@@ -59,6 +63,12 @@ environment.systemPackages = with pkgs; [
   shardx-launcher
 ];
 ```
+
+Run `nix run --no-update-lock-file .#shardx-launcher-package-check` to build
+and inspect the installed bundle's name, ID, version, executable, and arm64
+architecture without launching it, plus strict signature verification for
+renamed releases. Push/PR CI runs this native check, and the
+daily updater runs it before publishing a changed launcher source.
 
 ## WordCraft CLI
 

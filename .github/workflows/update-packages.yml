@@ -49,6 +49,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: nix run --no-update-lock-file .#update-shardx-launcher
 
+      - name: Validate updated ShardX Launcher before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- packages/shardx-launcher-source.json; then
+            nix run --no-update-lock-file .#shardx-launcher-package-check
+          fi
+
       - name: Update WordCraft CLI
         env:
           GITHUB_TOKEN: ${{ github.token }}

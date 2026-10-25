@@ -7,6 +7,11 @@
 
 let
   source = builtins.fromJSON (builtins.readFile ./shardx-launcher-source.json);
+  appName =
+    if lib.versionAtLeast source.version "2.1.0" then
+      "ShardBrowser Launcher.app"
+    else
+      "ShardX Launcher.app";
 in
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "shardx-launcher";
@@ -23,13 +28,12 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook preInstall
 
     mkdir -p "$out/Applications"
-    cp -R "ShardX Launcher.app" "$out/Applications/"
+    cp -R "${appName}" "$out/Applications/"
 
     runHook postInstall
   '';
 
-  # Upstream distributes this application without a Developer ID signature.
-  # Avoid Nix fixups changing the unmodified upstream bundle.
+  # Preserve the original upstream bundle and its signature without re-signing.
   dontFixup = true;
 
   meta = {
