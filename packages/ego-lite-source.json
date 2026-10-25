@@ -1,8 +1,8 @@
 {
-  "version": "0.6.0.16",
-  "bundleVersion": "6.0.16",
+  "version": "0.6.1.9",
+  "bundleVersion": "6.1.9",
   "url": "https://cdn.ego.app/setup/macos/arm64/egolite.dmg",
-  "hash": "sha256-//e7pLC/ZSIO4qnoTAlOS/uQ1DGov38hKLwo/fmj+os=",
-  "upstreamHash": "sha256:fff7bba4b0bf65220ee2a9e84c094e4bfb90d431a8bf7f2128bc28fdf9a3fa8b",
-  "s3VersionId": "i8Gc6VQju3ewKqfjnWUQ3LSFb0Ay2UZ_"
+  "hash": "sha256-fJTrOeDdk0cD7LXvORRIHP/OLp38ekG/dpb01iP7spE=",
+  "upstreamHash": "sha256:7c94eb39e0dd934703ecb5ef3914481cffce2e9dfc7a41bf7696f4d623fbb291",
+  "s3VersionId": "aiajsi9SIBif5LB6EspZBS2A0CKjYz3R"
 }
