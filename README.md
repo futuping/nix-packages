@@ -324,8 +324,9 @@ version, bundle ID, Developer ID authority, Team ID, executable architecture,
 strict code signature, and bundled CLI. Validation copies the bundle without
 HFS resource forks and Finder metadata, matching the data files installed by
 `undmg`; it never re-signs the application or skips signature verification.
-Any changed artifact under an unchanged
-application version also fails for manual review.
+Any changed artifact under an unchanged application version also fails for
+manual review. A new S3 object version containing the exact same bytes and
+application metadata is a no-op; the existing source and provenance are kept.
 The native CI and updater workflow also run
 `nix run --no-update-lock-file .#ego-lite-package-check` to verify the final
 Nix bundle's preserved Developer ID signature and notarization.

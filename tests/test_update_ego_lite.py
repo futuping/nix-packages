@@ -129,13 +129,46 @@ class UpdateEgoLiteTests(unittest.TestCase):
 
     def test_update_rejects_same_version_artifact_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = self.write_source(directory, self.source(s3VersionId="old-version"))
+            path = self.write_source(directory, self.source(
+                hash=update_ego_lite.sri_sha256("cd" * 32),
+                upstreamHash=f"sha256:{'cd' * 32}",
+                s3VersionId="old-version",
+            ))
+            before = path.read_bytes()
             download, inspect = self.mocked_upstream()
 
             with download, inspect, self.assertRaisesRegex(
                 update_ego_lite.UpdateError, "changed; manual review"
             ):
                 update_ego_lite.update(path)
+
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_update_ignores_s3_version_only_change_without_rewriting_source(self):
+        for check in (False, True):
+            with self.subTest(check=check), tempfile.TemporaryDirectory() as directory:
+                path = self.write_source(directory, self.source(s3VersionId="old-version"))
+                before = path.read_bytes()
+                download, inspect = self.mocked_upstream()
+
+                with download, inspect:
+                    changed = update_ego_lite.update(path, check=check)
+
+                self.assertFalse(changed)
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_update_rejects_same_version_bundle_metadata_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_source(directory)
+            before = path.read_bytes()
+            download, inspect = self.mocked_upstream(bundle_version="4.5.6")
+
+            with download, inspect, self.assertRaisesRegex(
+                update_ego_lite.UpdateError, "changed; manual review"
+            ):
+                update_ego_lite.update(path)
+
+            self.assertEqual(path.read_bytes(), before)
 
     def test_update_rejects_downgrade(self):
         with tempfile.TemporaryDirectory() as directory:

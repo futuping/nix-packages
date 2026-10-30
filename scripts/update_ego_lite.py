@@ -364,7 +364,11 @@ def update(path: Path, *, check: bool = False) -> bool:
     }
 
     if latest_key == current_key:
-        if latest != current:
+        # S3 can assign a new object version to a byte-identical re-upload.
+        # Keep the original provenance without turning transport-only changes
+        # into failures or source churn; all application/content fields must match.
+        identity_keys = EXPECTED_SOURCE_KEYS - {"s3VersionId"}
+        if any(latest[key] != current[key] for key in identity_keys):
             raise UpdateError(
                 f"upstream artifact for version {version} changed; manual review required"
             )
