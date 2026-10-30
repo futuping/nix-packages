@@ -70,8 +70,11 @@ class UpdateWordCraftCliTests(unittest.TestCase):
                 document.external_attr = (stat.S_IFREG | 0o644) << 16
                 archive.writestr(document, b"notice")
             for name in extra_entries:
-                entry = zipfile.ZipInfo(name)
-                entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                if isinstance(name, zipfile.ZipInfo):
+                    entry = name
+                else:
+                    entry = zipfile.ZipInfo(name)
+                    entry.external_attr = (stat.S_IFREG | 0o644) << 16
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", UserWarning)
                     archive.writestr(entry, b"other")
@@ -183,6 +186,54 @@ class UpdateWordCraftCliTests(unittest.TestCase):
             self.archive(archive)
             with patch.object(updater.sys, "platform", "linux"):
                 updater.inspect_archive(archive, "0.8.0")
+
+    def test_archive_accepts_reviewed_legal_notices(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "asset.zip"
+            self.archive(
+                archive,
+                extra_entries=(
+                    "wordcraft-cli-0.8.0-macos-universal/ATTRIBUTION.md",
+                    "wordcraft-cli-0.8.0-macos-universal/NOTICE",
+                ),
+            )
+            with patch.object(updater.sys, "platform", "linux"):
+                updater.inspect_archive(archive, "0.8.0")
+
+    def test_archive_rejects_unreviewed_notice_paths(self):
+        directory = "wordcraft-cli-0.8.0-macos-universal/"
+        for name in (
+            "ATTRIBUTION.md.exe",
+            "ATTRIBUTION.md/../outside",
+            "notices/ATTRIBUTION.md",
+            "../ATTRIBUTION.md",
+            "NOTICE.exe",
+            "notices/NOTICE",
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                archive = Path(temporary) / "asset.zip"
+                self.archive(archive, extra_entries=(directory + name,))
+                with self.assertRaisesRegex(updater.UpdateError, "unexpected archive entry"):
+                    updater.inspect_archive(archive, "0.8.0")
+
+    def test_archive_rejects_notice_symlinks(self):
+        for name in ("ATTRIBUTION.md", "NOTICE"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                archive = Path(temporary) / "asset.zip"
+                notice = zipfile.ZipInfo("wordcraft-cli-0.8.0-macos-universal/" + name)
+                notice.external_attr = (stat.S_IFLNK | 0o777) << 16
+                self.archive(archive, extra_entries=(notice,))
+                with self.assertRaisesRegex(updater.UpdateError, "unexpected archive entry"):
+                    updater.inspect_archive(archive, "0.8.0")
+
+    def test_archive_rejects_duplicate_notices(self):
+        for name in ("ATTRIBUTION.md", "NOTICE"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                archive = Path(temporary) / "asset.zip"
+                entry = "wordcraft-cli-0.8.0-macos-universal/" + name
+                self.archive(archive, extra_entries=(entry, entry))
+                with self.assertRaisesRegex(updater.UpdateError, "one unique"):
+                    updater.inspect_archive(archive, "0.8.0")
 
     def test_archive_rejects_traversal_duplicate_and_unknown_entries(self):
         for entry in (

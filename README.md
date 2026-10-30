@@ -109,6 +109,11 @@ page rendering in an isolated temporary directory. CI runs this native check
 on Apple silicon. The existing daily updater also checks the CLI; consumers
 still update their own lock and activate their system explicitly.
 
+The archive validator accepts the reviewed top-level executable and legal
+documents, including the `ATTRIBUTION.md` and `NOTICE` added in 0.12.0.
+Both are retained under `share/doc/wordcraft-cli`. Unknown files, nested paths,
+symlinks, duplicate entries, and invalid signatures still fail validation.
+
 ## Neomacs
 
 `neomacs` forwards the upstream Apple Silicon Nix package from `main`, retaining
@@ -288,7 +293,19 @@ locks require rebuilding.
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
-daily.
+daily at 06:37 UTC and supports manual dispatch. Each binary package has its
+own job, native validation, and source-only commit. The matrix disables
+fail-fast, so one rejected release cannot discard or block the other packages'
+validated updates. Jobs publish one at a time and each checks out the latest
+`main`, avoiding conflicts between their commits. Publication runs only on
+`main`; a failing package still marks the workflow as failed.
+
+Network requests retry transient server errors, rate limits, timeouts, and
+interrupted connections at most three times. Each download attempt starts
+from scratch and recomputes its hash. Permanent HTTP errors, certificate
+failures, invalid release metadata, hash mismatches, and signature failures
+are not retried or suppressed.
+
 ShardX Launcher requires one exact Apple Silicon release asset, downloads it
 from an allowlisted GitHub host, and verifies its SHA-256 against GitHub's asset
 digest when available. Upstream sometimes publishes a release before uploading
@@ -313,8 +330,16 @@ The native CI and updater workflow also run
 `nix run --no-update-lock-file .#ego-lite-package-check` to verify the final
 Nix bundle's preserved Developer ID signature and notarization.
 
-The same daily workflow updates Neomacs in a separate, sequential Apple Silicon
-job after the binary updaters. It updates only the Neomacs input and its upstream
+The CDN URL is mutable: the recorded S3 version ID is provenance metadata,
+not a guaranteed way to retrieve an older installer. A clean build of an old
+pin can fail its hash check after upstream replaces the download. Independent
+updates reduce this stale-pin window; they cannot make the upstream URL
+immutable. Supporting arbitrary historical pins requires an immutable upstream
+download or durable retention of the exact validated artifact. CI keeps
+enforcing the recorded hash.
+
+The same daily workflow updates Neomacs in a separate Apple Silicon
+job after all binary jobs, even when one of them fails. It updates only the Neomacs input and its upstream
 dependency lock graph, builds and smoke-tests the candidate, and checks the
 standalone flake, then uploads the candidate to the binary cache before
 committing `flake.lock`. A failed candidate, cache upload, or timeout
@@ -331,7 +356,9 @@ contents.
 
 The flake pins the maintainer toolchain, including Python 3.14 and the Nix CLI
 used for Neomacs lock updates and standalone evaluation. The maintainer check
-also parses workflow YAML with the pinned `yq` executable before running tests.
+parses workflow YAML with pinned `yq` and validates GitHub Actions expressions,
+job dependencies, matrix usage, and event schemas with pinned `actionlint`
+before running tests.
 Enter it from the repository root with:
 
 ```sh

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import zipfile
 
+from scripts.network import with_network_retries
 
 API_URL = "https://api.github.com/repos/storytold/wordcraft/releases/latest"
 ASSET_NAME = "wordcraft-cli-{version}-macos-universal.zip"
@@ -132,22 +134,27 @@ def github_release() -> dict:
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    try:
+
+    def request_release():
         with open_reviewed(Request(API_URL, headers=headers), {"api.github.com"}, "API", 30) as response:
             validate_response_url(response.geturl(), {"api.github.com"}, "API")
             payload = response.read(MAX_API_BYTES + 1)
             if len(payload) > MAX_API_BYTES:
                 raise UpdateError("release metadata exceeded the 2 MiB safety limit")
             return json.loads(payload)
-    except (OSError, URLError, json.JSONDecodeError, UnicodeError) as error:
+
+    try:
+        return with_network_retries(request_release, "query the latest GitHub release")
+    except (OSError, URLError, IncompleteRead, json.JSONDecodeError, UnicodeError) as error:
         raise UpdateError(f"unable to query the latest release: {error}") from error
 
 
 def download_artifact(url: str, destination: Path) -> str:
     request = Request(url, headers={"User-Agent": "futuping-nix-packages-updater"})
-    digest = hashlib.sha256()
-    downloaded = 0
-    try:
+
+    def attempt_download():
+        digest = hashlib.sha256()
+        downloaded = 0
         with open_reviewed(request, ALLOWED_DOWNLOAD_HOSTS, "download", 60) as response:
             validate_response_url(response.geturl(), ALLOWED_DOWNLOAD_HOSTS, "download")
             with destination.open("wb") as artifact:
@@ -157,18 +164,24 @@ def download_artifact(url: str, destination: Path) -> str:
                         raise UpdateError("download exceeded the 128 MiB safety limit")
                     digest.update(chunk)
                     artifact.write(chunk)
-    except (OSError, URLError) as error:
+        if downloaded == 0:
+            raise UpdateError("downloaded asset is empty")
+        return digest.hexdigest()
+
+    try:
+        return with_network_retries(attempt_download, "download WordCraft CLI")
+    except (OSError, URLError, IncompleteRead) as error:
         raise UpdateError(f"unable to download the release asset: {error}") from error
-    if downloaded == 0:
-        raise UpdateError("downloaded asset is empty")
-    return digest.hexdigest()
 
 
 def inspect_archive(archive_path: Path, expected_version: str) -> None:
     directory = f"wordcraft-cli-{expected_version}-macos-universal"
     executable_name = f"{directory}/wordcraft-cli"
+    # v0.12.0 adds upstream attribution and copyright notices alongside licenses.
+    # Keep exact document names; arbitrary files and nested paths remain invalid.
     document_pattern = re.compile(
-        r"(?:README\.md|LICENSE(?:-MIT|-APACHE)?|COPYRIGHT|OFL-[A-Za-z0-9_-]+\.txt)"
+        r"(?:README\.md|ATTRIBUTION\.md|NOTICE|LICENSE(?:-MIT|-APACHE)?|COPYRIGHT|"
+        r"OFL-[A-Za-z0-9_-]+\.txt)"
     )
     try:
         with zipfile.ZipFile(archive_path) as archive:

@@ -113,24 +113,26 @@
             export PATH=${pkgs.lib.makeBinPath [ pkgs.coreutils ]}:"$PATH"
             cd ${self}
             ${pkgs.yq-go}/bin/yq eval '.' .github/workflows/*.yml >/dev/null
+            ${pkgs.actionlint}/bin/actionlint -shellcheck= .github/workflows/*.yml
             ${python}/bin/python3 --version
             exec ${python}/bin/python3 -m unittest discover -s tests
           '';
           makeUpdaterApp =
-            name: script: source:
+            name: module: source:
             let
               program = pkgs.writeShellScript "nix-packages-${name}" ''
                 set -euo pipefail
                 ${pythonEnvironment}
 
-                repository_root="''${NIX_PACKAGES_REPOSITORY:-$PWD}"
+                repository_root="$(cd -- "''${NIX_PACKAGES_REPOSITORY:-$PWD}" && pwd -P)"
                 source_path="$repository_root/${source}"
                 if [[ ! -f "$repository_root/flake.nix" || ! -f "$source_path" ]]; then
                   echo "error: run this updater from the nix-packages repository root" >&2
                   exit 2
                 fi
 
-                exec ${python}/bin/python3 ${script} "$@" --source "$source_path"
+                cd ${self}
+                exec ${python}/bin/python3 -m ${module} "$@" --source "$source_path"
               '';
             in
             {
@@ -144,6 +146,7 @@
               python
               pkgs.nix
               pkgs.yq-go
+              pkgs.actionlint
             ];
             shellHook = pythonEnvironment + ''
               export NIX_PACKAGES_BASH=${pkgs.bash}/bin/bash
@@ -174,13 +177,13 @@
               ''}";
             };
             update-ego-lite =
-              makeUpdaterApp "update-ego-lite" ./scripts/update_ego_lite.py
+              makeUpdaterApp "update-ego-lite" "scripts.update_ego_lite"
                 "packages/ego-lite-source.json";
             update-shardx-launcher =
-              makeUpdaterApp "update-shardx-launcher" ./scripts/update_shardx_launcher.py
+              makeUpdaterApp "update-shardx-launcher" "scripts.update_shardx_launcher"
                 "packages/shardx-launcher-source.json";
             update-wordcraft-cli =
-              makeUpdaterApp "update-wordcraft-cli" ./scripts/update_wordcraft_cli.py
+              makeUpdaterApp "update-wordcraft-cli" "scripts.update_wordcraft_cli"
                 "packages/wordcraft-cli-source.json";
           };
         };

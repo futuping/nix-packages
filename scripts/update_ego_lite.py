@@ -3,6 +3,7 @@
 import argparse
 import base64
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from scripts.network import with_network_retries
 
 DOWNLOAD_URL = "https://cdn.ego.app/setup/macos/arm64/egolite.dmg"
 DOWNLOAD_HOST = "cdn.ego.app"
@@ -101,10 +103,11 @@ def download_artifact(url: str, destination: Path) -> tuple[str, str, str]:
         url,
         headers={"User-Agent": "futuping-nix-packages-updater"},
     )
-    digest = hashlib.sha256()
-    downloaded = 0
 
-    try:
+    def attempt_download():
+        digest = hashlib.sha256()
+        downloaded = 0
+
         with urlopen(request, timeout=60) as response:
             final_url = response.geturl()
             validate_download_url(final_url)
@@ -119,18 +122,21 @@ def download_artifact(url: str, destination: Path) -> tuple[str, str, str]:
                         raise UpdateError("download exceeded the 256 MiB safety limit")
                     digest.update(chunk)
                     artifact.write(chunk)
-    except (OSError, URLError) as error:
+
+        if downloaded != content_length:
+            raise UpdateError(
+                f"downloaded {downloaded} bytes, expected {content_length} bytes"
+            )
+
+        downloaded_hash_hex = digest.hexdigest()
+        if downloaded_hash_hex != upstream_hash_hex:
+            raise UpdateError("downloaded SHA-256 does not match CDN metadata")
+        return downloaded_hash_hex, upstream_hash_hex, s3_version_id
+
+    try:
+        return with_network_retries(attempt_download, "download ego lite")
+    except (OSError, URLError, IncompleteRead) as error:
         raise UpdateError(f"unable to download ego lite: {error}") from error
-
-    if downloaded != content_length:
-        raise UpdateError(
-            f"downloaded {downloaded} bytes, expected {content_length} bytes"
-        )
-
-    downloaded_hash_hex = digest.hexdigest()
-    if downloaded_hash_hex != upstream_hash_hex:
-        raise UpdateError("downloaded SHA-256 does not match CDN metadata")
-    return downloaded_hash_hex, upstream_hash_hex, s3_version_id
 
 
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:

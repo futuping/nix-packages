@@ -6,6 +6,7 @@ import argparse
 import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from scripts.network import with_network_retries
 
 API_URL = "https://api.github.com/repos/ProxyShard/ShardBrowser/releases/latest"
 RENAME_VERSION = (2, 1, 0)
@@ -169,13 +171,17 @@ def github_release() -> dict:
         headers["Authorization"] = f"Bearer {token}"
 
     request = Request(API_URL, headers=headers)
-    try:
+
+    def request_release():
         with urlopen(request, timeout=30) as response:
             validate_response_url(
                 response.geturl(), {"api.github.com"}, "API"
             )
             return json.load(response)
-    except (OSError, URLError, json.JSONDecodeError) as error:
+
+    try:
+        return with_network_retries(request_release, "query the latest GitHub release")
+    except (OSError, URLError, IncompleteRead, json.JSONDecodeError) as error:
         raise UpdateError(f"unable to query the latest release: {error}") from error
 
 
@@ -184,10 +190,11 @@ def download_artifact(url: str, destination: Path) -> str:
         url,
         headers={"User-Agent": "futuping-nix-packages-updater"},
     )
-    digest = hashlib.sha256()
-    downloaded = 0
 
-    try:
+    def attempt_download():
+        digest = hashlib.sha256()
+        downloaded = 0
+
         with urlopen(request, timeout=60) as response:
             validate_response_url(
                 response.geturl(), ALLOWED_DOWNLOAD_HOSTS, "download"
@@ -200,12 +207,15 @@ def download_artifact(url: str, destination: Path) -> str:
                         raise UpdateError("download exceeded the 64 MiB safety limit")
                     digest.update(chunk)
                     artifact.write(chunk)
-    except (OSError, URLError) as error:
-        raise UpdateError(f"unable to download the release asset: {error}") from error
 
-    if downloaded == 0:
-        raise UpdateError("downloaded asset is empty")
-    return digest.hexdigest()
+        if downloaded == 0:
+            raise UpdateError("downloaded asset is empty")
+        return digest.hexdigest()
+
+    try:
+        return with_network_retries(attempt_download, "download ShardX Launcher")
+    except (OSError, URLError, IncompleteRead) as error:
+        raise UpdateError(f"unable to download the release asset: {error}") from error
 
 
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:

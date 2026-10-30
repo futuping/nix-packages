@@ -24,7 +24,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
 
     install -Dm755 wordcraft-cli "$out/bin/wordcraft-cli"
     mkdir -p "$out/share/doc/wordcraft-cli"
-    for document in README.md LICENSE LICENSE-MIT LICENSE-APACHE COPYRIGHT OFL-*.txt; do
+    for document in README.md ATTRIBUTION.md NOTICE LICENSE LICENSE-MIT LICENSE-APACHE COPYRIGHT OFL-*.txt; do
       if [ -f "$document" ]; then
         cp "$document" "$out/share/doc/wordcraft-cli/"
       fi

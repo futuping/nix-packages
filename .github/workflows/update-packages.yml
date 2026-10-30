@@ -14,12 +14,23 @@ concurrency:
 
 jobs:
   update-packages:
+    name: Update ${{ matrix.package }}
+    if: ${{ github.ref == 'refs/heads/main' }}
     # GitHub's macos-15 label is the arm64 image; macos-15-intel is separate.
     runs-on: macos-15
     timeout-minutes: 20
+    # Each package publishes only after its own validation. A failed candidate
+    # cannot discard another package's update. Serialize publication and read
+    # main afresh to avoid races between the bot commits.
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        package: [ego-lite, shardx-launcher, wordcraft-cli]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
@@ -33,46 +44,26 @@ jobs:
       - name: Test updaters through the locked maintainer environment
         run: nix run --no-update-lock-file .#maintainer-check
 
-      - name: Update ego lite
-        run: nix run --no-update-lock-file .#update-ego-lite
-
-      - name: Validate updated ego lite package before publishing
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! git diff --quiet -- packages/ego-lite-source.json; then
-            nix run --no-update-lock-file .#ego-lite-package-check
-          fi
-
-      - name: Update ShardX Launcher
+      - name: Update package
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: nix run --no-update-lock-file .#update-shardx-launcher
+          PACKAGE: ${{ matrix.package }}
+        run: nix run --no-update-lock-file ".#update-$PACKAGE"
 
-      - name: Validate updated ShardX Launcher before publishing
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! git diff --quiet -- packages/shardx-launcher-source.json; then
-            nix run --no-update-lock-file .#shardx-launcher-package-check
-          fi
-
-      - name: Update WordCraft CLI
+      - name: Validate the changed package before publishing
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: nix run --no-update-lock-file .#update-wordcraft-cli
-
-      - name: Validate updated WordCraft CLI before publishing
+          PACKAGE: ${{ matrix.package }}
         shell: bash
         run: |
           set -euo pipefail
-          if ! git diff --quiet -- packages/wordcraft-cli-source.json; then
-            nix run --no-update-lock-file .#wordcraft-cli-package-check
+          if ! git diff --quiet -- "packages/$PACKAGE-source.json"; then
+            nix run --no-update-lock-file ".#$PACKAGE-package-check"
           fi
 
       - name: Commit update or keep scheduled workflow active
         env:
           GH_PUSH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.package }}
         shell: bash
         run: |
           set -euo pipefail
@@ -86,15 +77,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          sources=(
-            packages/ego-lite-source.json
-            packages/shardx-launcher-source.json
-            packages/wordcraft-cli-source.json
-          )
-
-          if ! git diff --quiet -- "${sources[@]}"; then
-            git add "${sources[@]}"
-            git commit -m "chore: update package sources"
+          source="packages/$PACKAGE-source.json"
+          if ! git diff --quiet -- "$source"; then
+            git add -- "$source"
+            git commit -m "chore: update $PACKAGE source"
             git push
             exit 0
           fi
