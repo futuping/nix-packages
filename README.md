@@ -116,7 +116,7 @@ symlinks, duplicate entries, and invalid signatures still fail validation.
 
 ## ToDesk
 
-`todesk` preserves the signed macOS universal payload from the official PKG.
+`todesk` selects the signed macOS universal payload from the official PKG.
 Its download requires interactive browser verification, so the package uses
 `requireFile` with a reviewed SHA-256. The proprietary installer is not stored
 in this repository or uploaded to a public binary cache. For the pinned release:
@@ -127,20 +127,27 @@ in this repository or uploaded to a public binary cache. For the pinned release:
    the packaged app, component signatures, architecture, and service contracts.
 
 ToDesk needs a writable app at `/Applications/ToDesk.app`, a system service,
-a session agent, and its upstream setuid XPC helper. Enable the lifecycle module:
+a session agent, and its upstream setuid XPC helper. Import its module and select
+the bare package name, like other applications:
 
 ```nix
 imports = [ inputs.nix-packages.darwinModules.todesk ];
-programs.todesk.enable = true;
+environment.systemPackages = with pkgs; [
+  todesk
+];
 ```
 
-Do not also select `todesk` in `environment.systemPackages`: Finder would then
-expose an additional immutable copy that cannot satisfy these runtime needs.
+The module automatically enables management when `todesk` is selected. The
+selection package retains the payload without exposing another immutable app
+in Finder; its `todeskPayload` attribute provides the original signed files.
 The module owns the deployed app, AI payload, audio driver and launchd plists;
 it refuses to overwrite an existing unmanaged installation. It stages updates
 before replacement, rolls back failed deployment, and preserves runtime data
-when disabled. Keep the module imported while setting `enable = false` so
-cleanup runs. It does not execute vendor installer/telemetry scripts or install
+when disabled. Remove `todesk` from the package list and keep the module imported
+so the next activation cleans up its installation. Explicit
+`programs.todesk.enable` and `programs.todesk.package` overrides remain available
+for advanced configurations; `package` accepts either a selection package or a
+raw payload. It does not execute vendor installer/telemetry scripts or install
 the vendor's competing uninstaller/watch services. The UI does not auto-start
 unless `programs.todesk.uiAutoStart` is enabled. Screen Recording and
 Accessibility approvals remain in macOS System Settings. Audio driver changes

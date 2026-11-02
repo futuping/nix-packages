@@ -76,9 +76,15 @@
         export LC_ALL=C
         export PYTHONDONTWRITEBYTECODE=1
         export PYTHONNOUSERSITE=1
+        selection="${self.packages.aarch64-darwin.todesk}"
+        payload="${self.packages.aarch64-darwin.todesk.todeskPayload}"
+        test ! -e "$selection/Applications"
+        test ! -L "$selection/Applications"
+        test -L "$selection/share/todesk/payload"
+        test "$(${aarch64DarwinPkgs.coreutils}/bin/readlink "$selection/share/todesk/payload")" = "$payload"
         cd ${self}
         exec ${aarch64DarwinPkgs.python314}/bin/python3 -m tests.check_todesk \
-          ${self.packages.aarch64-darwin.todesk} ${self.packages.aarch64-darwin.todesk.version}
+          "$payload" "${self.packages.aarch64-darwin.todesk.version}"
       '';
       neomacsPackageCheck = aarch64DarwinPkgs.writeShellScript "neomacs-package-check" ''
         set -euo pipefail
@@ -243,45 +249,12 @@
         wordcraft-cli-overlay = (aarch64DarwinPkgs.extend wordcraftCliOverlay).wordcraft-cli;
         todesk-package = self.packages.aarch64-darwin.todesk;
         todesk-overlay = (aarch64DarwinPkgs.extend todeskOverlay).todesk;
-        todesk-module =
-          let
-            evaluate =
-              enable:
-              nixpkgs.lib.evalModules {
-                modules = [
-                  {
-                    config._module.args.pkgs = aarch64DarwinPkgs.extend todeskOverlay;
-                    options.nixpkgs.overlays = nixpkgs.lib.mkOption {
-                      type = with nixpkgs.lib.types; listOf raw;
-                      default = [ ];
-                    };
-                    options.system.activationScripts = nixpkgs.lib.mkOption {
-                      type =
-                        with nixpkgs.lib.types;
-                        attrsOf (submodule {
-                          options.text = nixpkgs.lib.mkOption {
-                            type = lines;
-                            default = "";
-                          };
-                        });
-                      default = { };
-                    };
-                  }
-                  self.darwinModules.todesk
-                  { programs.todesk.enable = enable; }
-                ];
-              };
-            enabled = evaluate true;
-            disabled = evaluate false;
-            overlayPackage = (aarch64DarwinPkgs.appendOverlays enabled.config.nixpkgs.overlays).todesk;
-          in
-          assert overlayPackage.drvPath == self.packages.aarch64-darwin.todesk.drvPath;
-          assert nixpkgs.lib.hasInfix (builtins.unsafeDiscardStringContext (
-            toString overlayPackage
-          )) enabled.config.system.activationScripts.postActivation.text;
-          assert nixpkgs.lib.hasInfix "--disable"
-            disabled.config.system.activationScripts.postActivation.text;
-          enabled.config.programs.todesk.package;
+        todesk-module = import ./tests/todesk-module.nix {
+          lib = nixpkgs.lib;
+          pkgs = aarch64DarwinPkgs.extend todeskOverlay;
+          module = self.darwinModules.todesk;
+          expectedPackage = self.packages.aarch64-darwin.todesk;
+        };
         wordcraft-cli-module =
           let
             evaluated = nixpkgs.lib.evalModules {
