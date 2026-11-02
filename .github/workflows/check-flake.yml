@@ -80,7 +80,9 @@ jobs:
       # Crane reads generated Cargo metadata during evaluation. Realize it in
       # the native build above before the read-only no-build flake check.
       - name: Check the standalone lock and all flake outputs
-        run: nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
+        run: |
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.default-module-neomacs.drvPath >/dev/null
+          nix develop --no-update-lock-file .#maintainer -c nix flake check --all-systems --no-build --no-update-lock-file
 
       # PRs only read the public cache. Never expose the write token to them
       # or automatically upload outputs before the native checks have passed.
@@ -213,6 +215,9 @@ jobs:
           set -euo pipefail
 
           nix flake metadata --no-update-lock-file >/dev/null
+          # The shared source entry point must expose bare package names and
+          # activate lifecycle management only for selected applications.
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.default-module.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#packages.aarch64-darwin.ego-lite.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.ego-lite-package.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.ego-lite-overlay.drvPath >/dev/null

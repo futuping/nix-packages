@@ -11,6 +11,25 @@ inputs.nix-packages = {
 };
 ```
 
+Register this package source once in the nix-darwin module list:
+
+```nix
+modules = [
+  inputs.nix-packages.darwinModules.default
+];
+```
+
+After that, add or remove only bare application names in the package list.
+The shared module makes every package available without selecting any of them.
+It also registers lifecycle management for applications that need it; ToDesk
+automatically follows its presence in `environment.systemPackages`. There are
+no per-application local imports, implementation files, or required enable
+options. Keep the shared source module imported when removing an application so
+its owned installation can be cleaned up during the next activation. Focused
+`darwinModules.<name>` exports remain available for existing consumers.
+When ToDesk has never been selected, the shared module creates no ToDesk state
+directories and does not touch an unmanaged installation.
+
 ## ego lite
 
 `ego-lite` packages the official Apple Silicon DMG and exposes the bundled
@@ -20,15 +39,7 @@ The browser binary is closed source and is therefore marked unfree; the upstream
 repository's MIT license covers the open-source automation harness rather than
 the browser itself.
 
-Import its focused overlay module:
-
-```nix
-modules = [
-  inputs.nix-packages.darwinModules.ego-lite
-];
-```
-
-Then select the package normally:
+Select its bare package name:
 
 ```nix
 environment.systemPackages = with pkgs; [
@@ -48,15 +59,7 @@ Older ShardX releases did not carry an Apple Developer ID signature. The
 verified 2.1.1 release is Developer ID signed; the derivation preserves the
 upstream bundle and signature without re-signing.
 
-Import its focused overlay module:
-
-```nix
-modules = [
-  inputs.nix-packages.darwinModules.shardx-launcher
-];
-```
-
-Then select the package normally:
+Select its bare package name:
 
 ```nix
 environment.systemPackages = with pkgs; [
@@ -78,8 +81,8 @@ document conversion, inspection, scripted editing, and a headless MCP server.
 The package preserves the upstream executable and its code signature by
 disabling fixups.
 
-Import `inputs.nix-packages.darwinModules.wordcraft-cli`, then select the bare
-`wordcraft-cli` attribute in `environment.systemPackages = with pkgs; [ ... ];`.
+Select the bare `wordcraft-cli` attribute in
+`environment.systemPackages = with pkgs; [ ... ];`.
 The package is currently exported for `aarch64-darwin`.
 
 For a headless Codex connection after installation:
@@ -127,11 +130,10 @@ in this repository or uploaded to a public binary cache. For the pinned release:
    the packaged app, component signatures, architecture, and service contracts.
 
 ToDesk needs a writable app at `/Applications/ToDesk.app`, a system service,
-a session agent, and its upstream setuid XPC helper. Import its module and select
-the bare package name, like other applications:
+a session agent, and its upstream setuid XPC helper. The shared source module
+handles this remotely; select only the bare package name:
 
 ```nix
-imports = [ inputs.nix-packages.darwinModules.todesk ];
 environment.systemPackages = with pkgs; [
   todesk
 ];
@@ -143,8 +145,8 @@ in Finder; its `todeskPayload` attribute provides the original signed files.
 The module owns the deployed app, AI payload, audio driver and launchd plists;
 it refuses to overwrite an existing unmanaged installation. It stages updates
 before replacement, rolls back failed deployment, and preserves runtime data
-when disabled. Remove `todesk` from the package list and keep the module imported
-so the next activation cleans up its installation. Explicit
+when disabled. Remove `todesk` from the package list and keep the shared source
+module imported so the next activation cleans up its installation. Explicit
 `programs.todesk.enable` and `programs.todesk.package` overrides remain available
 for advanced configurations; `package` accepts either a selection package or a
 raw payload. It does not execute vendor installer/telemetry scripts or install
@@ -283,15 +285,7 @@ removes its files, and never sets
 default file handlers. It does not test Neomacs rendering, window focus, or its
 language modes. No GUI test is run by the headless package check.
 
-Import its focused overlay module:
-
-```nix
-modules = [
-  inputs.nix-packages.darwinModules.neomacs
-];
-```
-
-Then select the package by its bare name:
+Select the package by its bare name:
 
 ```nix
 environment.systemPackages = with pkgs; [

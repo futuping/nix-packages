@@ -416,6 +416,13 @@ class Manager:
             temporary.unlink(missing_ok=True)
 
     def apply(self, package=None, ui_auto_start=False):
+        # The shared package-source module is imported even on machines that
+        # have never selected ToDesk. Do not create app-specific state there.
+        if package is None:
+            try:
+                self.path(CONTROL).lstat()
+            except FileNotFoundError:
+                return "already disabled"
         with self.lock():
             return self._apply(Path(package) if package is not None else None, ui_auto_start)
 

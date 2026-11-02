@@ -241,6 +241,19 @@
       };
 
       checks.aarch64-darwin = {
+        default-module = import ./tests/default-module.nix {
+          lib = nixpkgs.lib;
+          pkgs = aarch64DarwinPkgs;
+          module = self.darwinModules.default;
+          expectedPackages = self.packages.aarch64-darwin;
+        };
+        default-module-neomacs = import ./tests/default-module.nix {
+          lib = nixpkgs.lib;
+          pkgs = aarch64DarwinPkgs;
+          module = self.darwinModules.default;
+          expectedPackages = self.packages.aarch64-darwin;
+          checkNeomacs = true;
+        };
         ego-lite-package = self.packages.aarch64-darwin.ego-lite;
         ego-lite-overlay = (aarch64DarwinPkgs.extend egoLiteOverlay).ego-lite;
         shardx-launcher-package = self.packages.aarch64-darwin.shardx-launcher;
@@ -324,6 +337,18 @@
         wordcraft-cli = wordcraftCliOverlay;
         todesk = todeskOverlay;
         neomacs = neomacsOverlay;
+      };
+
+      # Register the source once. Application selection stays in the consumer's
+      # package list; lifecycle modules infer their defaults from that list.
+      darwinModules.default = {
+        imports = [
+          self.darwinModules.ego-lite
+          self.darwinModules.shardx-launcher
+          self.darwinModules.wordcraft-cli
+          self.darwinModules.todesk
+          self.darwinModules.neomacs
+        ];
       };
 
       darwinModules.ego-lite =

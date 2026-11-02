@@ -119,6 +119,34 @@ class ManageToDeskTests(unittest.TestCase):
         config.write_text("[hkey_local_machine]\nsecret = keep\nbus = official\n")
         config.chmod(0o600)
 
+    def test_unselected_app_creates_no_directories_and_runs_no_commands(self):
+        self.assertEqual(self.manager.apply(), "already disabled")
+        self.assertEqual(self.manager.apply(), "already disabled")
+        self.assertEqual(list(self.root.iterdir()), [])
+        self.assertEqual(self.macos.calls, [])
+
+    def test_unselected_app_leaves_unmanaged_installation_and_jobs_alone(self):
+        app = self.installed(lifecycle.APP)
+        app.mkdir(parents=True)
+        (app / "mine").write_text("unmanaged")
+        self.macos.jobs.add("system/com.youqu.todesk.service")
+        self.assertEqual(self.manager.apply(), "already disabled")
+        self.assertEqual((app / "mine").read_text(), "unmanaged")
+        self.assertEqual(self.macos.jobs, {"system/com.youqu.todesk.service"})
+        self.assertFalse(self.installed("Library").exists())
+        self.assertEqual(self.macos.calls, [])
+
+    def test_disable_refuses_dangling_control_symlink_without_creating_target(self):
+        control = self.installed(lifecycle.CONTROL)
+        control.parent.mkdir(parents=True)
+        outside = self.directory / "absent-control"
+        control.symlink_to(outside)
+        with self.assertRaisesRegex(lifecycle.DeploymentError, "symlink"):
+            self.manager.apply()
+        self.assertTrue(control.is_symlink())
+        self.assertFalse(outside.exists())
+        self.assertEqual(self.macos.calls, [])
+
     def test_install_native_paths_permissions_services_and_no_vendor_execution(self):
         self.assertEqual(self.manager.apply(self.first), "installed")
         self.assertFalse(self.installed(lifecycle.STARTUP).exists())
