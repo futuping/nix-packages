@@ -71,6 +71,15 @@
         "$executable" --version
         exec ${aarch64DarwinPkgs.python314}/bin/python3 ${./tests/check_wordcraft_cli.py} "$executable"
       '';
+      todeskPackageCheck = aarch64DarwinPkgs.writeShellScript "todesk-package-check" ''
+        set -euo pipefail
+        export LC_ALL=C
+        export PYTHONDONTWRITEBYTECODE=1
+        export PYTHONNOUSERSITE=1
+        cd ${self}
+        exec ${aarch64DarwinPkgs.python314}/bin/python3 -m tests.check_todesk \
+          ${self.packages.aarch64-darwin.todesk} ${self.packages.aarch64-darwin.todesk.version}
+      '';
       neomacsPackageCheck = aarch64DarwinPkgs.writeShellScript "neomacs-package-check" ''
         set -euo pipefail
         export LC_ALL=C
@@ -185,6 +194,9 @@
             update-wordcraft-cli =
               makeUpdaterApp "update-wordcraft-cli" "scripts.update_wordcraft_cli"
                 "packages/wordcraft-cli-source.json";
+            update-todesk =
+              makeUpdaterApp "update-todesk" "scripts.update_todesk"
+                "packages/todesk-source.json";
           };
         };
       maintainer = forMaintainerSystems maintainerFor;
@@ -196,6 +208,9 @@
       };
       wordcraftCliOverlay = final: _prev: {
         wordcraft-cli = final.callPackage ./packages/wordcraft-cli.nix { };
+      };
+      todeskOverlay = final: _prev: {
+        todesk = final.callPackage ./packages/todesk.nix { };
       };
       # Keep the launcher and core on upstream's lock. A consumer's nixpkgs
       # follows edge or overlays must not change the output published by CI.
@@ -215,6 +230,7 @@
         ego-lite = aarch64DarwinPkgs.callPackage ./packages/ego-lite.nix { };
         shardx-launcher = aarch64DarwinPkgs.callPackage ./packages/shardx-launcher.nix { };
         wordcraft-cli = aarch64DarwinPkgs.callPackage ./packages/wordcraft-cli.nix { };
+        todesk = aarch64DarwinPkgs.callPackage ./packages/todesk.nix { };
         neomacs = neomacsPackage;
       };
 
@@ -225,6 +241,47 @@
         shardx-launcher-overlay = (aarch64DarwinPkgs.extend shardxLauncherOverlay).shardx-launcher;
         wordcraft-cli-package = self.packages.aarch64-darwin.wordcraft-cli;
         wordcraft-cli-overlay = (aarch64DarwinPkgs.extend wordcraftCliOverlay).wordcraft-cli;
+        todesk-package = self.packages.aarch64-darwin.todesk;
+        todesk-overlay = (aarch64DarwinPkgs.extend todeskOverlay).todesk;
+        todesk-module =
+          let
+            evaluate =
+              enable:
+              nixpkgs.lib.evalModules {
+                modules = [
+                  {
+                    config._module.args.pkgs = aarch64DarwinPkgs.extend todeskOverlay;
+                    options.nixpkgs.overlays = nixpkgs.lib.mkOption {
+                      type = with nixpkgs.lib.types; listOf raw;
+                      default = [ ];
+                    };
+                    options.system.activationScripts = nixpkgs.lib.mkOption {
+                      type =
+                        with nixpkgs.lib.types;
+                        attrsOf (submodule {
+                          options.text = nixpkgs.lib.mkOption {
+                            type = lines;
+                            default = "";
+                          };
+                        });
+                      default = { };
+                    };
+                  }
+                  self.darwinModules.todesk
+                  { programs.todesk.enable = enable; }
+                ];
+              };
+            enabled = evaluate true;
+            disabled = evaluate false;
+            overlayPackage = (aarch64DarwinPkgs.appendOverlays enabled.config.nixpkgs.overlays).todesk;
+          in
+          assert overlayPackage.drvPath == self.packages.aarch64-darwin.todesk.drvPath;
+          assert nixpkgs.lib.hasInfix (builtins.unsafeDiscardStringContext (
+            toString overlayPackage
+          )) enabled.config.system.activationScripts.postActivation.text;
+          assert nixpkgs.lib.hasInfix "--disable"
+            disabled.config.system.activationScripts.postActivation.text;
+          enabled.config.programs.todesk.package;
         wordcraft-cli-module =
           let
             evaluated = nixpkgs.lib.evalModules {
@@ -271,6 +328,10 @@
             type = "app";
             program = "${wordcraftCliPackageCheck}";
           };
+          todesk-package-check = {
+            type = "app";
+            program = "${todeskPackageCheck}";
+          };
           neomacs-package-check = {
             type = "app";
             program = "${neomacsPackageCheck}";
@@ -288,6 +349,7 @@
         ego-lite = egoLiteOverlay;
         shardx-launcher = shardxLauncherOverlay;
         wordcraft-cli = wordcraftCliOverlay;
+        todesk = todeskOverlay;
         neomacs = neomacsOverlay;
       };
 
@@ -307,6 +369,13 @@
         { lib, ... }:
         {
           nixpkgs.overlays = lib.mkAfter [ wordcraftCliOverlay ];
+        };
+
+      darwinModules.todesk =
+        { lib, ... }:
+        {
+          imports = [ ./modules/todesk.nix ];
+          nixpkgs.overlays = lib.mkAfter [ todeskOverlay ];
         };
 
       darwinModules.neomacs =

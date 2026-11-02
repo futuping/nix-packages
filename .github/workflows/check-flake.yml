@@ -194,9 +194,11 @@ jobs:
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.ego-lite-package-check.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.shardx-launcher-package-check.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.wordcraft-cli-package-check.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.todesk-package-check.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-ego-lite.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-shardx-launcher.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.update-wordcraft-cli.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.update-todesk.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.update-neomacs.program >/dev/null
           nix eval --raw .#apps.aarch64-darwin.push-neomacs-cache.program >/dev/null
           nix eval --raw .#devShells.x86_64-linux.maintainer.drvPath >/dev/null
@@ -221,3 +223,10 @@ jobs:
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.wordcraft-cli-package.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.wordcraft-cli-overlay.drvPath >/dev/null
           nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.wordcraft-cli-module.drvPath >/dev/null
+          # ToDesk's official CAPTCHA requires a manually imported PKG. CI
+          # evaluates its integration and tests lifecycle transactions offline;
+          # a maintainer runs the native payload check before updating its hash.
+          nix eval --raw --no-update-lock-file .#packages.aarch64-darwin.todesk.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.todesk-package.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.todesk-overlay.drvPath >/dev/null
+          nix eval --raw --no-update-lock-file .#checks.aarch64-darwin.todesk-module.drvPath >/dev/null

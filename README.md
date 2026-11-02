@@ -114,6 +114,61 @@ documents, including the `ATTRIBUTION.md` and `NOTICE` added in 0.12.0.
 Both are retained under `share/doc/wordcraft-cli`. Unknown files, nested paths,
 symlinks, duplicate entries, and invalid signatures still fail validation.
 
+## ToDesk
+
+`todesk` preserves the signed macOS universal payload from the official PKG.
+Its download requires interactive browser verification, so the package uses
+`requireFile` with a reviewed SHA-256. The proprietary installer is not stored
+in this repository or uploaded to a public binary cache. For the pinned release:
+
+1. Download the PKG linked in `packages/todesk-source.json` using a browser.
+2. Import it: `nix-store --add-fixed sha256 /path/to/ToDesk_5.2.3.0.pkg`.
+3. Run `nix run --no-update-lock-file .#todesk-package-check` to build and verify
+   the packaged app, component signatures, architecture, and service contracts.
+
+ToDesk needs a writable app at `/Applications/ToDesk.app`, a system service,
+a session agent, and its upstream setuid XPC helper. Enable the lifecycle module:
+
+```nix
+imports = [ inputs.nix-packages.darwinModules.todesk ];
+programs.todesk.enable = true;
+```
+
+Do not also select `todesk` in `environment.systemPackages`: Finder would then
+expose an additional immutable copy that cannot satisfy these runtime needs.
+The module owns the deployed app, AI payload, audio driver and launchd plists;
+it refuses to overwrite an existing unmanaged installation. It stages updates
+before replacement, rolls back failed deployment, and preserves runtime data
+when disabled. Keep the module imported while setting `enable = false` so
+cleanup runs. It does not execute vendor installer/telemetry scripts or install
+the vendor's competing uninstaller/watch services. The UI does not auto-start
+unless `programs.todesk.uiAutoStart` is enabled. Screen Recording and
+Accessibility approvals remain in macOS System Settings. Audio driver changes
+may require logging out or restarting; activation does not kill audio services.
+The upstream-required writable directories add resources outside the app's
+original seal. The module verifies the clean staged signature first, then
+compares deployed code and resources against the pinned payload while excluding
+only those runtime directories. It never re-signs the app. Quit the ToDesk UI
+before upgrading or disabling it; an unchanged deployment remains usable.
+
+The existing daily workflow monitors the official stable metadata. A new release
+requires manual artifact import, not an unattended download or system switch:
+
+```sh
+nix run --no-update-lock-file .#update-todesk -- --check
+nix run --no-update-lock-file .#update-todesk -- --artifact /absolute/path/ToDesk_VERSION.pkg
+nix-store --add-fixed sha256 /absolute/path/ToDesk_VERSION.pkg
+nix run --no-update-lock-file .#todesk-package-check
+```
+
+The importer verifies the installer and app identities, notarization, version,
+architectures, and SHA-256 before changing the source pin. It ignores gray
+rollouts and rejects downgrades and same-version mutations. CI evaluates the
+package, overlay and lifecycle module and tests metadata/transactions offline.
+Native payload verification requires the manually imported PKG and must be run
+by the maintainer before publishing a new pin. These checks do not establish
+that an interactive remote-control session or macOS privacy approvals work.
+
 ## Neomacs
 
 `neomacs` forwards the upstream Apple Silicon Nix package from `main`, retaining
