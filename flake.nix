@@ -171,7 +171,14 @@
             type = "app";
             program = "${maintainerCheck}";
           };
-          updaterApps = nixpkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+          updaterApps = {
+            # Monitoring uses only official metadata; installer imports still
+            # require native macOS signature and package tools.
+            update-todesk =
+              makeUpdaterApp "update-todesk" "scripts.update_todesk"
+                "packages/todesk-source.json";
+          }
+          // nixpkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
             push-neomacs-cache = {
               type = "app";
               program = "${pkgs.writeShellScript "nix-packages-push-neomacs-cache" ''
@@ -200,9 +207,6 @@
             update-wordcraft-cli =
               makeUpdaterApp "update-wordcraft-cli" "scripts.update_wordcraft_cli"
                 "packages/wordcraft-cli-source.json";
-            update-todesk =
-              makeUpdaterApp "update-todesk" "scripts.update_todesk"
-                "packages/todesk-source.json";
           };
         };
       maintainer = forMaintainerSystems maintainerFor;

@@ -160,8 +160,10 @@ compares deployed code and resources against the pinned payload while excluding
 only those runtime directories. It never re-signs the app. Quit the ToDesk UI
 before upgrading or disabling it; an unchanged deployment remains usable.
 
-The existing daily workflow monitors the official stable metadata. A new release
-requires manual artifact import, not an unattended download or system switch:
+The existing daily workflow monitors the official stable metadata on Linux.
+This JSON-only check does not need a macOS runner or inspect an installer.
+A new release requires manual artifact import on macOS, not an unattended
+download or system switch:
 
 ```sh
 nix run --no-update-lock-file .#update-todesk -- --check

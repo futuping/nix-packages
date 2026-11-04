@@ -15,7 +15,8 @@ concurrency:
 jobs:
   monitor-todesk:
     name: Check ToDesk stable release for manual import
-    runs-on: macos-15
+    # Metadata monitoring does not need a native macOS runner.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

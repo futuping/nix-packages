@@ -205,6 +205,7 @@ jobs:
           nix eval --raw .#apps.aarch64-darwin.push-neomacs-cache.program >/dev/null
           nix eval --raw .#devShells.x86_64-linux.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.x86_64-linux.maintainer-check.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.x86_64-linux.update-todesk.program >/dev/null
 
       - name: Test through the locked maintainer environment
         run: nix run --no-update-lock-file .#maintainer-check
