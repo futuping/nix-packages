@@ -111,7 +111,8 @@ jobs:
 
   python-compatibility:
     name: Python ${{ matrix.python-version }} compatibility
-    runs-on: ubuntu-latest
+    # Python 3.9 has setup-python builds for Ubuntu 24.04, but not 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     strategy:
