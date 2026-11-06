@@ -1,0 +1,92 @@
+name: Update one binary package
+description: Validate and independently publish one binary source from a fresh main checkout.
+
+inputs:
+  package:
+    description: The supported package whose source should be updated.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Require a supported binary package
+      env:
+        PACKAGE: ${{ inputs.package }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "$PACKAGE" in
+          ego-lite|shardx-launcher|wordcraft-cli) ;;
+          *) echo "error: unsupported binary package: $PACKAGE" >&2; exit 2 ;;
+        esac
+
+    # Retain the root checkout containing this action. Reusing a separate
+    # candidate checkout resets any failed package before the next action,
+    # and observes the preceding package's possible publication to main.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        ref: main
+        path: candidate
+        clean: true
+        persist-credentials: false
+
+    - name: Test through the candidate's locked maintainer environment
+      shell: bash
+      working-directory: candidate
+      run: nix run --no-update-lock-file .#maintainer-check
+
+    - name: Update the selected package
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        PACKAGE: ${{ inputs.package }}
+      shell: bash
+      working-directory: candidate
+      run: nix run --no-update-lock-file ".#update-$PACKAGE"
+
+    - name: Validate the changed package before publishing
+      env:
+        PACKAGE: ${{ inputs.package }}
+      shell: bash
+      working-directory: candidate
+      run: |
+        set -euo pipefail
+        if ! git diff --quiet -- "packages/$PACKAGE-source.json"; then
+          nix run --no-update-lock-file ".#$PACKAGE-package-check"
+        fi
+
+    - name: Commit only this package or keep the schedule active
+      if: ${{ github.ref == 'refs/heads/main' }}
+      env:
+        GH_PUSH_TOKEN: ${{ github.token }}
+        PACKAGE: ${{ inputs.package }}
+      shell: bash
+      working-directory: candidate
+      run: |
+        set -euo pipefail
+
+        # Inject Git push authentication only in this publication process.
+        # The updater uses a step-local token for release metadata requests;
+        # native package checks have no token or persisted Git credentials.
+        export GIT_CONFIG_COUNT=1
+        export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+        export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PUSH_TOKEN" | base64 | tr -d '\n')"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        source="packages/$PACKAGE-source.json"
+        if ! git diff --quiet -- "$source"; then
+          git add -- "$source"
+          git commit -m "chore: update $PACKAGE source"
+          git push
+          exit 0
+        fi
+
+        now="$(date +%s)"
+        last_commit="$(git log -1 --format=%ct)"
+        if (( now - last_commit >= 2592000 )); then
+          git commit --allow-empty -m "chore: keep package updater active"
+          git push
+        else
+          echo "No package update or heartbeat is due."
+        fi

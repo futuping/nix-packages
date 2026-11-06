@@ -125,7 +125,7 @@ Its download requires interactive browser verification, so the package uses
 in this repository or uploaded to a public binary cache. For the pinned release:
 
 1. Download the PKG linked in `packages/todesk-source.json` using a browser.
-2. Import it: `nix-store --add-fixed sha256 /path/to/ToDesk_5.2.3.0.pkg`.
+2. Import it: `nix-store --add-fixed sha256 /path/to/ToDesk_5.3.1.0.pkg`.
 3. Run `nix run --no-update-lock-file .#todesk-package-check` to build and verify
    the packaged app, component signatures, architecture, and service contracts.
 
@@ -351,12 +351,17 @@ locks require rebuilding.
 ## Automatic updates
 
 The `Update packages` workflow checks the updater-managed binary packages
-daily at 06:37 UTC and supports manual dispatch. Each binary package has its
-own job, native validation, and source-only commit. The matrix disables
-fail-fast, so one rejected release cannot discard or block the other packages'
-validated updates. Jobs publish one at a time and each checks out the latest
-`main`, avoiding conflicts between their commits. Publication runs only on
-`main`; a failing package still marks the workflow as failed.
+daily at 06:37 UTC and supports manual dispatch. The three binary updaters
+share one Apple Silicon runner to reduce hosted runner allocation failures.
+Each starts from a fresh checkout of the latest `main`, with its own native
+validation, 20-minute budget, and source-only commit. A rejected candidate
+cannot contaminate the next checkout or block the other packages' validated
+updates. Publication runs only on `main`; a final result check still fails the
+job if any package failed. A lost runner can still interrupt the remaining
+updates; sharing a runner does not guarantee hosted capacity.
+
+Push/PR validation likewise shares one Apple Silicon runner for the three
+binary package checks. Neomacs keeps its separate native build and cache gates.
 
 Network requests retry transient server errors, rate limits, timeouts, and
 interrupted connections at most three times. Each download attempt starts
@@ -398,7 +403,8 @@ download or durable retention of the exact validated artifact. CI keeps
 enforcing the recorded hash.
 
 The same daily workflow updates Neomacs in a separate Apple Silicon
-job after all binary jobs, even when one of them fails. It updates only the Neomacs input and its upstream
+job after the binary update job, even when a package fails. It updates only the
+Neomacs input and its upstream
 dependency lock graph, builds and smoke-tests the candidate, and checks the
 standalone flake, then uploads the candidate to the binary cache before
 committing `flake.lock`. A failed candidate, cache upload, or timeout

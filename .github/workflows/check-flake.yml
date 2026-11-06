@@ -15,10 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  shardx-launcher-package:
-    name: Check ShardX Launcher on Apple silicon
+  binary-packages:
+    name: Check binary packages on Apple silicon
+    # Share the native runner so each binary does not need another scarce
+    # macOS arm64 allocation. Every package keeps its native validation.
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -30,30 +32,18 @@ jobs:
       - name: Verify Apple silicon package runner
         run: test "$(/usr/bin/uname -m)" = arm64
 
-      - name: Verify the installed bundle identity, version and architecture
+      - name: Build and assess the locked ego lite package
+        run: nix run --no-update-lock-file .#ego-lite-package-check
+
+      - name: Verify ShardX Launcher bundle identity, version and architecture
         run: nix run --no-update-lock-file .#shardx-launcher-package-check
 
-  wordcraft-cli-package:
-    name: Check WordCraft CLI and headless MCP on Apple silicon
-    runs-on: macos-15
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
-
-      - name: Verify Apple silicon package runner
-        run: test "$(/usr/bin/uname -m)" = arm64
-
-      - name: Verify the signature and exercise headless document editing
+      - name: Verify WordCraft CLI signature and exercise headless document editing
         run: nix run --no-update-lock-file .#wordcraft-cli-package-check
 
   neomacs-package:
     name: Build Neomacs on Apple silicon
-    needs: [check, python-compatibility, ego-lite-package]
+    needs: [check, python-compatibility, binary-packages]
     runs-on: macos-15
     timeout-minutes: 120
 
@@ -118,27 +108,6 @@ jobs:
           nix build --no-link --no-update-lock-file \
             --max-jobs 0 --builders '' \
             .#packages.aarch64-darwin.neomacs
-
-  ego-lite-package:
-    name: Build ego lite on Apple silicon
-    runs-on: macos-15
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
-
-      - name: Verify Apple silicon package runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(/usr/bin/uname -m)" = arm64
-
-      - name: Build and assess the locked ego lite package
-        run: nix run --no-update-lock-file .#ego-lite-package-check
 
   python-compatibility:
     name: Python ${{ matrix.python-version }} compatibility

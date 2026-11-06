@@ -127,7 +127,8 @@
             export NIX_PACKAGES_BASH=${pkgs.bash}/bin/bash
             export PATH=${pkgs.lib.makeBinPath [ pkgs.coreutils ]}:"$PATH"
             cd ${self}
-            ${pkgs.yq-go}/bin/yq eval '.' .github/workflows/*.yml >/dev/null
+            ${pkgs.yq-go}/bin/yq eval '.' \
+              .github/workflows/*.yml .github/actions/*/action.yml >/dev/null
             ${pkgs.actionlint}/bin/actionlint -shellcheck= .github/workflows/*.yml
             ${python}/bin/python3 --version
             exec ${python}/bin/python3 -m unittest discover -s tests
