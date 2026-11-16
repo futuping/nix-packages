@@ -172,6 +172,15 @@
             type = "app";
             program = "${maintainerCheck}";
           };
+          retryApp = {
+            type = "app";
+            program = "${pkgs.writeShellScript "nix-packages-retry-update-ci" ''
+              set -euo pipefail
+              ${pythonEnvironment}
+              cd ${self}
+              exec ${python}/bin/python3 -m scripts.retry_update_ci "$@"
+            ''}";
+          };
           updaterApps = {
             # Monitoring uses only official metadata; installer imports still
             # require native macOS signature and package tools.
@@ -304,6 +313,7 @@
         system:
         {
           maintainer-check = maintainer.${system}.checkApp;
+          retry-update-ci = maintainer.${system}.retryApp;
         }
         // maintainer.${system}.updaterApps
         // nixpkgs.lib.optionalAttrs (system == "aarch64-darwin") {

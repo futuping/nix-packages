@@ -360,6 +360,27 @@ updates. Publication runs only on `main`; a final result check still fails the
 job if any package failed. A lost runner can still interrupt the remaining
 updates; sharing a runner does not guarantee hosted capacity.
 
+A separate Linux workflow retries this updater at most twice when every failed
+job is a native job that never acquired a runner and GitHub explicitly reports
+macOS ARM capacity constraints. It verifies the repository, workflow, branch,
+event, attempt, job states and annotations before requesting a retry, and
+rechecks the run immediately before submitting. Only scheduled and manually
+dispatched updates on `main` qualify; three total attempts exhaust the budget.
+Any actual package failure, ToDesk manual-import alert, unknown job or mixed
+failure prevents automatic retry. GitHub may also rerun successful dependent
+jobs when retrying a failed prerequisite. Native validation and publication
+gates remain required, and persistent capacity failures remain visible.
+
+Inspect the decision without requesting a rerun:
+
+```sh
+GITHUB_TOKEN="$(gh auth token)" nix run --no-update-lock-file .#retry-update-ci -- \
+  --repository futuping/nix-packages --run-id RUN_ID --attempt ATTEMPT
+```
+
+Only `--apply` submits the retry. The helper executes trusted `main` and never
+runs artifacts or source from the triggering checkout.
+
 Push/PR validation likewise shares one Apple Silicon runner for the three
 binary package checks. Neomacs keeps its separate native build and cache gates.
 

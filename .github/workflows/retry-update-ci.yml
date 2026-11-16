@@ -1,0 +1,48 @@
+name: Retry update runner capacity failures
+
+on:
+  workflow_run:
+    workflows: [Update packages]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: write
+  checks: read
+
+concurrency:
+  group: retry-update-ci-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    if: >-
+      ${{ contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion)
+          && contains(fromJSON('["schedule", "workflow_dispatch"]'), github.event.workflow_run.event)
+          && github.event.workflow_run.head_repository.full_name == github.repository
+          && github.event.workflow_run.run_attempt < 3 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      # Use trusted main, never code or artifacts from a triggering checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Retry only verified runner allocation failures within the budget
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          nix run --no-update-lock-file .#retry-update-ci -- \
+            --repository "$SOURCE_REPOSITORY" \
+            --run-id "$SOURCE_RUN_ID" \
+            --attempt "$SOURCE_ATTEMPT" \
+            --apply

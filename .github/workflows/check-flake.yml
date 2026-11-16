@@ -163,6 +163,7 @@ jobs:
 
           nix eval --raw .#devShells.aarch64-darwin.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.aarch64-darwin.maintainer-check.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.retry-update-ci.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.ego-lite-package-check.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.shardx-launcher-package-check.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.aarch64-darwin.wordcraft-cli-package-check.program >/dev/null
@@ -175,6 +176,7 @@ jobs:
           nix eval --raw .#apps.aarch64-darwin.push-neomacs-cache.program >/dev/null
           nix eval --raw .#devShells.x86_64-linux.maintainer.drvPath >/dev/null
           nix eval --raw .#apps.x86_64-linux.maintainer-check.program >/dev/null
+          nix eval --raw --no-update-lock-file .#apps.x86_64-linux.retry-update-ci.program >/dev/null
           nix eval --raw --no-update-lock-file .#apps.x86_64-linux.update-todesk.program >/dev/null
 
       - name: Test through the locked maintainer environment
