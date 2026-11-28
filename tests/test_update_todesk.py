@@ -416,7 +416,7 @@ class UpdateToDeskTests(unittest.TestCase):
     def test_report_keeps_network_json_metadata_url_and_downgrade_errors_failing(self):
         failures = [
             URLError("offline"),
-            HTTPError(updater.API_URL, 404, "Not found", {}, None),
+            HTTPError(updater.API_URL, 404, "Not found", {}, io.BytesIO(b"not found")),
             Response(b"not JSON"),
             Response(b"challenge", content_type="text/html"),
             Response(url="https://example.com/config"),
