@@ -162,15 +162,25 @@ before upgrading or disabling it; an unchanged deployment remains usable.
 
 The existing daily workflow monitors the official stable metadata on Linux.
 This JSON-only check does not need a macOS runner or inspect an installer.
+A newer release appears as a notice and in the workflow summary, without
+failing the update workflow each day while manual import is pending. Invalid
+metadata, unexpected URLs, downgrades, and network errors still fail the job.
 A new release requires manual artifact import on macOS, not an unattended
 download or system switch:
 
 ```sh
+nix run --no-update-lock-file .#update-todesk -- --report
 nix run --no-update-lock-file .#update-todesk -- --check
 nix run --no-update-lock-file .#update-todesk -- --artifact /absolute/path/ToDesk_VERSION.pkg
 nix-store --add-fixed sha256 /absolute/path/ToDesk_VERSION.pkg
 nix run --no-update-lock-file .#todesk-package-check
 ```
+
+`--report` queries metadata only and succeeds when a valid newer release is
+pending. It cannot be combined with `--check` or `--artifact`. `--check`
+retains its exit status of 1 for a pending update, for callers that explicitly
+want that signal. Neither metadata-only mode changes the reviewed source pin
+or verifies the installer hash.
 
 The importer verifies the installer and app identities, notarization, version,
 architectures, and SHA-256 before changing the source pin. It ignores gray
@@ -366,7 +376,7 @@ macOS ARM capacity constraints. It verifies the repository, workflow, branch,
 event, attempt, job states and annotations before requesting a retry, and
 rechecks the run immediately before submitting. Only scheduled and manually
 dispatched updates on `main` qualify; three total attempts exhaust the budget.
-Any actual package failure, ToDesk manual-import alert, unknown job or mixed
+Any actual package failure, ToDesk monitoring error, unknown job or mixed
 failure prevents automatic retry. GitHub may also rerun successful dependent
 jobs when retrying a failed prerequisite. Native validation and publication
 gates remain required, and persistent capacity failures remain visible.

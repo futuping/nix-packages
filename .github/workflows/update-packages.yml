@@ -28,7 +28,9 @@ jobs:
       - name: Test metadata and lifecycle logic offline
         run: nix run --no-update-lock-file .#maintainer-check
       - name: Report a newer stable release without rewriting the reviewed hash
-        run: nix run --no-update-lock-file .#update-todesk -- --check
+        # A pending manual import is a report, not a broken updater. Metadata
+        # and network errors still fail this step.
+        run: nix run --no-update-lock-file .#update-todesk -- --report
 
   update-packages:
     name: Update binary packages on Apple silicon

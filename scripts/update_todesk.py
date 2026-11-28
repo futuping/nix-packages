@@ -252,13 +252,42 @@ def write_source(path: Path, source: dict[str, str]) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def update(path: Path, *, artifact: Path | None = None, check: bool = False) -> bool:
+def report_release(current_version: str, version: str, url: str) -> None:
+    pending = version != current_version
+    status = (
+        f"ToDesk {version} is available; current source pin: {current_version}. Manual import required."
+        if pending else
+        f"ToDesk {version} metadata is current; current source pin: {current_version}."
+    )
+    details = f"Official installer: {url}\nSource pin unchanged; installer hash was not reverified."
+    if pending:
+        details += "\nDownload the official installer in a browser, then run --artifact PATH."
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        try:
+            with Path(summary_path).open("a", encoding="utf-8") as stream:
+                stream.write(f"## ToDesk stable release\n\n{status}\n\n{details}\n\n")
+        except (OSError, UnicodeError) as error:
+            raise UpdateError(f"unable to write GitHub Actions summary: {error}") from error
+    print(f"{status}\n{details}")
+    if pending and os.environ.get("GITHUB_ACTIONS") == "true":
+        # Both versions and the URL passed the strict metadata checks before
+        # reaching this report; none can contain workflow command syntax.
+        print(f"::notice title=ToDesk manual import pending::{status} Official installer: {url}")
+
+
+def update(path: Path, *, artifact: Path | None = None, check: bool = False, report: bool = False) -> bool:
+    if report and (check or artifact is not None):
+        raise UpdateError("--report cannot be combined with --check or --artifact")
     current = read_source(path)
     version, url = stable_metadata(official_metadata())
     current_key = version_key(current["version"])
     latest_key = version_key(version)
     if latest_key < current_key:
         raise UpdateError(f"configured version {current['version']} is newer than upstream {version}")
+    if report:
+        report_release(current["version"], version, url)
+        return latest_key != current_key
     if artifact is None:
         if latest_key == current_key:
             print(f"ToDesk {version} metadata is current; installer hash was not reverified")
@@ -286,15 +315,18 @@ def update(path: Path, *, artifact: Path | None = None, check: bool = False) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="report pending updates without writing")
+    parser.add_argument("--report", action="store_true", help="report stable metadata, succeeding when manual import is pending")
     parser.add_argument("--artifact", type=Path, help="verify and import an interactively downloaded official PKG")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="source metadata JSON path")
     arguments = parser.parse_args()
+    if arguments.report and (arguments.check or arguments.artifact is not None):
+        parser.error("--report cannot be combined with --check or --artifact")
     try:
-        changed = update(arguments.source, artifact=arguments.artifact, check=arguments.check)
+        changed = update(arguments.source, artifact=arguments.artifact, check=arguments.check, report=arguments.report)
     except UpdateError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    return 1 if changed and (arguments.check or arguments.artifact is None) else 0
+    return 1 if changed and not arguments.report and (arguments.check or arguments.artifact is None) else 0
 
 
 if __name__ == "__main__":

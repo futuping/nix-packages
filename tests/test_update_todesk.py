@@ -1,4 +1,4 @@
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 from scripts import update_todesk as updater
 
@@ -329,11 +330,163 @@ class UpdateToDeskTests(unittest.TestCase):
     def test_monitor_exit_status_signals_required_manual_update(self):
         for changed, arguments, expected in (
             (False, [], 0), (True, [], 1), (True, ["--check"], 1),
+            (False, ["--report"], 0), (True, ["--report"], 0),
             (True, ["--artifact", "download.pkg"], 0),
             (True, ["--artifact", "download.pkg", "--check"], 1),
         ):
             with self.subTest(arguments=arguments), patch.object(updater.sys, "argv", ["update_todesk", *arguments]), patch.object(updater, "update", return_value=changed):
                 self.assertEqual(updater.main(), expected)
+
+    def test_report_succeeds_with_current_or_pending_metadata_without_import(self):
+        for version in ("5.3.1.0", "5.4.0.0"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "source.json"
+                summary = Path(temporary) / "summary.md"
+                self.write_source(source, version="5.3.1.0")
+                before = source.read_bytes()
+                summary.write_text("Earlier step\n")
+                output = io.StringIO()
+                with (
+                    patch.object(updater.sys, "argv", ["update_todesk", "--source", str(source), "--report"]),
+                    patch.object(updater.sys, "platform", "linux"),
+                    patch.dict(updater.os.environ, {"GITHUB_ACTIONS": "true", "GITHUB_STEP_SUMMARY": str(summary)}),
+                    patch.object(updater, "open_metadata", return_value=Response(json.dumps(self.metadata(version=version)).encode())) as fetch,
+                    patch.object(updater, "copy_artifact") as copy,
+                    patch.object(updater, "inspect_installer") as inspect,
+                    patch.object(updater, "write_source") as write,
+                    redirect_stdout(output),
+                ):
+                    self.assertEqual(updater.main(), 0)
+                fetch.assert_called_once()
+                self.assertEqual(fetch.call_args.args[0].full_url, updater.API_URL)
+                copy.assert_not_called()
+                inspect.assert_not_called()
+                write.assert_not_called()
+                self.assertEqual(source.read_bytes(), before)
+                self.assertTrue(summary.read_text().startswith("Earlier step\n"))
+                for report in (output.getvalue(), summary.read_text()):
+                    self.assertIn(f"ToDesk {version}", report)
+                    self.assertIn("current source pin: 5.3.1.0", report)
+                    self.assertIn(updater.DOWNLOAD_URL.format(version=version), report)
+                    self.assertIn("Source pin unchanged; installer hash was not reverified", report)
+                if version == "5.4.0.0":
+                    self.assertIn("::notice title=ToDesk manual import pending::", output.getvalue())
+                    self.assertIn("Manual import required", summary.read_text())
+                    self.assertIn("--artifact PATH", summary.read_text())
+                else:
+                    self.assertIn("metadata is current", summary.read_text())
+                    self.assertNotIn("::notice", output.getvalue())
+                    self.assertNotIn("Manual import required", summary.read_text())
+
+    def test_report_works_outside_actions_without_an_output_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            self.write_source(source, version="5.3.1.0")
+            output = io.StringIO()
+            with (
+                patch.object(updater.sys, "argv", ["update_todesk", "--source", str(source), "--report"]),
+                patch.dict(updater.os.environ, {"GITHUB_ACTIONS": "", "GITHUB_STEP_SUMMARY": ""}),
+                patch.object(updater, "official_metadata", return_value=self.metadata(version="5.4.0.0")),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(updater.main(), 0)
+            self.assertIn("Manual import required", output.getvalue())
+            self.assertNotIn("::notice", output.getvalue())
+            self.assertEqual(list(Path(temporary).iterdir()), [source])
+
+    def test_report_rejects_conflicting_modes_before_reading_source_or_network(self):
+        for arguments in (["--check"], ["--artifact", "unused.pkg"], ["--check", "--artifact", "unused.pkg"]):
+            with (
+                self.subTest(arguments=arguments),
+                patch.object(updater.sys, "argv", ["update_todesk", "--report", *arguments]),
+                patch.object(updater, "read_source") as read,
+                patch.object(updater, "official_metadata") as fetch,
+                redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                updater.main()
+            self.assertEqual(error.exception.code, 2)
+            read.assert_not_called()
+            fetch.assert_not_called()
+        for arguments in ({"check": True}, {"artifact": Path("unused.pkg")}):
+            with patch.object(updater, "read_source") as read, self.assertRaises(updater.UpdateError):
+                updater.update(Path("unused.json"), report=True, **arguments)
+            read.assert_not_called()
+
+    def test_report_keeps_network_json_metadata_url_and_downgrade_errors_failing(self):
+        failures = [
+            URLError("offline"),
+            HTTPError(updater.API_URL, 404, "Not found", {}, None),
+            Response(b"not JSON"),
+            Response(b"challenge", content_type="text/html"),
+            Response(url="https://example.com/config"),
+            Response(json.dumps({"code": 500000}).encode()),
+            Response(json.dumps(self.metadata(version="5.4.0.0", mac_link_new="https://example.com/package.pkg")).encode()),
+            Response(json.dumps(self.metadata(version="5.2.3.0")).encode()),
+        ]
+        for failure in failures:
+            if isinstance(failure, HTTPError):
+                self.addCleanup(failure.close)
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "source.json"
+                summary = Path(temporary) / "summary.md"
+                self.write_source(source, version="5.3.1.0")
+                before = source.read_bytes()
+                output, errors = io.StringIO(), io.StringIO()
+                result = {"side_effect": failure} if isinstance(failure, Exception) else {"return_value": failure}
+                with (
+                    patch.object(updater.sys, "argv", ["update_todesk", "--source", str(source), "--report"]),
+                    patch.dict(updater.os.environ, {"GITHUB_ACTIONS": "true", "GITHUB_STEP_SUMMARY": str(summary)}),
+                    patch.object(updater, "open_metadata", **result) as fetch,
+                    patch.object(updater, "copy_artifact") as copy,
+                    patch.object(updater, "inspect_installer") as inspect,
+                    patch.object(updater, "write_source") as write,
+                    redirect_stdout(output), redirect_stderr(errors),
+                ):
+                    self.assertEqual(updater.main(), 1)
+                fetch.assert_called_once()
+                copy.assert_not_called()
+                inspect.assert_not_called()
+                write.assert_not_called()
+                self.assertEqual(source.read_bytes(), before)
+                self.assertEqual(output.getvalue(), "")
+                self.assertIn("error:", errors.getvalue())
+                self.assertFalse(summary.exists())
+
+    def test_report_rejects_bad_source_before_network_or_summary(self):
+        for payload in ("not JSON", '{"version":"broken"}', json.dumps(dict(self.source(), hash="sha256-invalid"))):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "source.json"
+                summary = Path(temporary) / "summary.md"
+                source.write_text(payload)
+                with (
+                    patch.object(updater.sys, "argv", ["update_todesk", "--source", str(source), "--report"]),
+                    patch.dict(updater.os.environ, {"GITHUB_ACTIONS": "true", "GITHUB_STEP_SUMMARY": str(summary)}),
+                    patch.object(updater, "official_metadata") as fetch,
+                    redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(updater.main(), 1)
+                fetch.assert_not_called()
+                self.assertEqual(source.read_text(), payload)
+                self.assertEqual(output.getvalue(), "")
+                self.assertFalse(summary.exists())
+
+    def test_report_summary_write_error_fails_without_success_notice(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            self.write_source(source, version="5.3.1.0")
+            before = source.read_bytes()
+            output, errors = io.StringIO(), io.StringIO()
+            with (
+                patch.object(updater.sys, "argv", ["update_todesk", "--source", str(source), "--report"]),
+                patch.dict(updater.os.environ, {"GITHUB_ACTIONS": "true", "GITHUB_STEP_SUMMARY": temporary}),
+                patch.object(updater, "official_metadata", return_value=self.metadata(version="5.4.0.0")),
+                redirect_stdout(output), redirect_stderr(errors),
+            ):
+                self.assertEqual(updater.main(), 1)
+            self.assertEqual(source.read_bytes(), before)
+            self.assertEqual(output.getvalue(), "")
+            self.assertIn("unable to write GitHub Actions summary", errors.getvalue())
 
 
 if __name__ == "__main__":
